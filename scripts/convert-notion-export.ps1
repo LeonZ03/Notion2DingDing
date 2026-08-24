@@ -7,13 +7,16 @@ param(
 
     [string]$EntryPath,
 
-    [int]$ExpectedImageCount = 0,
+    [int]$ExpectedImageCount = -1,
 
     [string[]]$RequiredText = @()
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+$utf8Encoding = New-Object System.Text.UTF8Encoding($false)
+[Console]::OutputEncoding = $utf8Encoding
+$OutputEncoding = $utf8Encoding
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
@@ -29,6 +32,120 @@ if ([string]::IsNullOrWhiteSpace($OutputPath)) {
 $resolvedInput = [IO.Path]::GetFullPath($InputPath)
 $resolvedOutput = [IO.Path]::GetFullPath($OutputPath)
 $temporaryRoot = $null
+
+function Get-Sha256 {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Path
+    )
+
+    $algorithm = [Security.Cryptography.SHA256]::Create()
+    $stream = [IO.File]::OpenRead($Path)
+    try {
+        return ([BitConverter]::ToString($algorithm.ComputeHash($stream))).Replace('-', '')
+    }
+    finally {
+        $stream.Dispose()
+        $algorithm.Dispose()
+    }
+}
+
+function Get-RelativePathCompat {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Root,
+
+        [Parameter(Mandatory)]
+        [string]$Path
+    )
+
+    $normalizedRoot = [IO.Path]::GetFullPath($Root).TrimEnd('\') + '\'
+    $normalizedPath = [IO.Path]::GetFullPath($Path)
+    if ($normalizedPath.StartsWith($normalizedRoot, [StringComparison]::OrdinalIgnoreCase)) {
+        return $normalizedPath.Substring($normalizedRoot.Length)
+    }
+    return $normalizedPath
+}
+
+function Get-MimeType {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Path
+    )
+
+    switch ([IO.Path]::GetExtension($Path).ToLowerInvariant()) {
+        '.png'  { return 'image/png' }
+        '.jpg'  { return 'image/jpeg' }
+        '.jpeg' { return 'image/jpeg' }
+        '.gif'  { return 'image/gif' }
+        '.webp' { return 'image/webp' }
+        '.svg'  { return 'image/svg+xml' }
+        default { return 'application/octet-stream' }
+    }
+}
+
+function Get-MarkdownAssets {
+    param(
+        [Parameter(Mandatory)]
+        [string]$MarkdownPath,
+
+        [Parameter(Mandatory)]
+        [string]$ContentRoot
+    )
+
+    $markdown = [IO.File]::ReadAllText($MarkdownPath)
+    $entryDirectory = [IO.Path]::GetDirectoryName($MarkdownPath)
+    $normalizedRoot = [IO.Path]::GetFullPath($ContentRoot).TrimEnd('\') + '\'
+    $pattern = '!\[[^\]]*\]\(\s*(?<target><[^>]+>|[^)\s]+)'
+    $matches = [Text.RegularExpressions.Regex]::Matches($markdown, $pattern)
+    $seen = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    $assets = [Collections.Generic.List[object]]::new()
+
+    foreach ($match in $matches) {
+        $target = $match.Groups['target'].Value.Trim()
+        if ($target.StartsWith('<') -and $target.EndsWith('>')) {
+            $target = $target.Substring(1, $target.Length - 2)
+        }
+
+        if ($target -match '^(?i:https?)://') {
+            throw "检测到尚未本地化的外部图片地址：$target"
+        }
+        if ($target -match '^(?i:data):') {
+            continue
+        }
+
+        $pathPart = ($target -split '[?#]', 2)[0]
+        try {
+            $decodedPath = [Uri]::UnescapeDataString($pathPart)
+        }
+        catch {
+            throw "图片路径 URL 解码失败：$target"
+        }
+        $decodedPath = $decodedPath.Replace('/', [IO.Path]::DirectorySeparatorChar)
+        $assetPath = [IO.Path]::GetFullPath((Join-Path $entryDirectory $decodedPath))
+
+        if (-not $assetPath.StartsWith($normalizedRoot, [StringComparison]::OrdinalIgnoreCase)) {
+            throw "图片路径超出 Notion 导出目录：$target"
+        }
+        if (-not (Test-Path -LiteralPath $assetPath -PathType Leaf)) {
+            throw "Notion 导出图片缺失：$target"
+        }
+        if (-not $seen.Add($assetPath)) {
+            continue
+        }
+
+        $item = Get-Item -LiteralPath $assetPath
+        $assets.Add([pscustomobject]@{
+            source       = $target
+            relativePath = Get-RelativePathCompat -Root $ContentRoot -Path $assetPath
+            mime         = Get-MimeType -Path $assetPath
+            bytes        = $item.Length
+            sha256       = Get-Sha256 -Path $assetPath
+        })
+    }
+
+    return @($assets)
+}
 
 function Get-MarkdownEntry {
     param(
@@ -69,6 +186,7 @@ function Get-MarkdownEntry {
     return $entries[0].FullName
 }
 
+$failure = $null
 try {
     $pandoc = Get-Command pandoc -ErrorAction SilentlyContinue
     if (-not $pandoc) {
@@ -96,6 +214,8 @@ try {
     $markdownEntry = Get-MarkdownEntry -ContentRoot $contentRoot -RequestedEntry $EntryPath
     $entryDirectory = [IO.Path]::GetDirectoryName($markdownEntry)
     $resourcePath = @($entryDirectory, $contentRoot) -join [IO.Path]::PathSeparator
+    $assets = @(Get-MarkdownAssets -MarkdownPath $markdownEntry -ContentRoot $contentRoot)
+    $minimumImageCount = if ($ExpectedImageCount -ge 0) { $ExpectedImageCount } else { $assets.Count }
 
     $outputDirectory = [IO.Path]::GetDirectoryName($resolvedOutput)
     [IO.Directory]::CreateDirectory($outputDirectory) | Out-Null
@@ -115,12 +235,32 @@ try {
 
     $verifyScript = Join-Path $PSScriptRoot 'test-docx-assets.ps1'
     Write-Host '[3/3] 验证 DOCX 正文与内嵌图片'
-    & $verifyScript `
+    $verificationJson = & $verifyScript `
         -DocxPath $resolvedOutput `
-        -ExpectedImageCount $ExpectedImageCount `
+        -ExpectedImageCount $minimumImageCount `
         -RequiredText $RequiredText
+    $verification = $verificationJson | ConvertFrom-Json
 
     Write-Host "转换成功：$resolvedOutput"
+    [pscustomobject]@{
+        success      = $true
+        input        = $resolvedInput
+        entry        = Get-RelativePathCompat -Root $contentRoot -Path $markdownEntry
+        output       = $resolvedOutput
+        assetCount   = $assets.Count
+        assets       = $assets
+        docx         = $verification
+    } | ConvertTo-Json -Depth 6
+}
+catch {
+    $failure = [pscustomobject]@{
+        success = $false
+        error   = [pscustomobject]@{
+            code    = 'CONVERSION_FAILED'
+            message = $_.Exception.Message
+            type    = $_.Exception.GetType().FullName
+        }
+    }
 }
 finally {
     if ($temporaryRoot) {
@@ -134,4 +274,9 @@ finally {
             Remove-Item -LiteralPath $resolvedTemporaryRoot -Recurse -Force -ErrorAction SilentlyContinue
         }
     }
+}
+
+if ($failure) {
+    $failure | ConvertTo-Json -Depth 4 -Compress
+    exit 1
 }
