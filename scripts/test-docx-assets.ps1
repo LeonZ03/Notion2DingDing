@@ -59,6 +59,21 @@ function Get-Sha256 {
     }
 }
 
+function Get-StreamSha256 {
+    param(
+        [Parameter(Mandatory)]
+        [IO.Stream]$Stream
+    )
+
+    $algorithm = [Security.Cryptography.SHA256]::Create()
+    try {
+        return ([BitConverter]::ToString($algorithm.ComputeHash($Stream))).Replace('-', '')
+    }
+    finally {
+        $algorithm.Dispose()
+    }
+}
+
 $archive = [IO.Compression.ZipFile]::OpenRead($resolvedDocx)
 try {
     $documentXmlText = Read-ZipEntryText -Archive $archive -EntryName 'word/document.xml'
@@ -72,6 +87,7 @@ try {
     $namespaceManager = [Xml.XmlNamespaceManager]::new($documentXml.NameTable)
     $namespaceManager.AddNamespace('w', 'http://schemas.openxmlformats.org/wordprocessingml/2006/main')
     $visibleText = ($documentXml.SelectNodes('//w:t', $namespaceManager) | ForEach-Object { $_.InnerText }) -join ''
+    $imageDrawingCount = @($documentXml.SelectNodes('//w:drawing', $namespaceManager)).Count
 
     foreach ($required in $RequiredText) {
         if (-not [string]::IsNullOrWhiteSpace($required) -and $visibleText.IndexOf($required, [StringComparison]::Ordinal) -lt 0) {
@@ -85,6 +101,19 @@ try {
     })
     $externalImageRelationships = @($imageRelationships | Where-Object {
         $_.GetAttribute('TargetMode') -eq 'External' -or $_.GetAttribute('Target') -match '^https?://'
+    })
+    $media = @($mediaEntries | ForEach-Object {
+        $stream = $_.Open()
+        try {
+            [pscustomobject]@{
+                entry  = $_.FullName
+                bytes  = $_.Length
+                sha256 = Get-StreamSha256 -Stream $stream
+            }
+        }
+        finally {
+            $stream.Dispose()
+        }
     })
 
     if ($mediaEntries.Count -lt $ExpectedImageCount) {
@@ -120,7 +149,11 @@ try {
         path                       = $resolvedDocx
         sha256                     = $hash
         bytes                      = (Get-Item -LiteralPath $resolvedDocx).Length
+        visibleTextCharacters      = $visibleText.Length
+        paragraphCount             = @($documentXml.SelectNodes('//w:p', $namespaceManager)).Count
+        imageDrawingCount          = $imageDrawingCount
         mediaCount                 = $mediaEntries.Count
+        media                      = $media
         imageRelationshipCount     = $imageRelationships.Count
         externalImageRelationships = $externalImageRelationships.Count
         notionTemporaryUrls        = 0

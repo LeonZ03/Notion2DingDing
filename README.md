@@ -46,7 +46,7 @@ npm run migrate -- `
   --name "迁移后的文档标题"
 ```
 
-也可以用 `--workspace "<WORKSPACE_ID>"` 指定钉钉知识库，两种目标必须且只能选择一个。如果导出包中包含多个 Markdown 页面，再用相对于导出包根目录的路径指定入口：
+也可以用 `--workspace "<WORKSPACE_ID>"` 指定钉钉知识库，两种目标必须且只能选择一个。工具会从本地链接自动推断根页面并递归追加可达子页面；只有导出包包含多个独立根页面时，才需要用相对于导出包根目录的路径指定入口：
 
 ```powershell
 npm run migrate -- `
@@ -59,15 +59,17 @@ npm run migrate -- `
 
 相同输入、标题和目标默认复用已有成功记录，避免重复创建文档。只有明确需要新建副本时才使用 `--force`；写入结果未知时即使指定 `--force` 也不会自动重试。
 
+最终 JSON 还会给出源页面与子页面清单、SHA-256、图片引用数、本地文件数、去重后资源数、DOCX 输出数量，以及特殊块的映射或降级警告。
+
 ## 本地验收
 
 仓库提供了不包含真实用户数据的固定夹具：
 
 ```powershell
-npm run check:stage2
+npm run check:stage3
 ```
 
-该命令会回归阶段 1 的目录和 ZIP 转换，并验证阶段 2 的迁移编排：
+该命令会回归阶段 1、阶段 2，并验证普通、长篇、多图片和嵌套子页面夹具：
 
 - 标题、正文、列表、表格和固定文本存在；
 - 两张测试图片都位于 DOCX 内部；
@@ -76,6 +78,10 @@ npm run check:stage2
 - 成功导入后必须用真实文档 URL 回读；
 - 图片缺失、ZIP 损坏、未登录和无权限不能误报成功；
 - 写入状态未知时禁止自动重试。
+- 中文、空格、URL 编码路径和两层子页面可正确处理；
+- 八个图片引用可按 SHA-256 去重，并核对全部八个输出位置；
+- Callout、Toggle、多栏和数据库生成明确映射或降级报告；
+- 长篇夹具的开头、中间、末尾与规模指标均通过检查。
 
 ## 后续产品形态
 
@@ -95,8 +101,8 @@ Edge 扩展最终只负责页面入口、参数选择、进度和结果展示，
 ## 常用检查
 
 ```powershell
-# 当前本地迁移 MVP（包含阶段 1 回归）
-npm run check:stage2
+# 当前本地迁移工具（包含阶段 1–3 回归）
+npm run check:stage3
 
 # Edge 扩展类型检查、构建和测试
 npm run check:extension
@@ -131,8 +137,9 @@ tests/              脱敏夹具和自动化测试
 ## 当前限制
 
 - 目标钉钉文件夹需要手工提供 `nodeId`，或者提供知识库 `workspaceId`；图形化目标选择尚未实现。
-- 多页面、数据库、Callout、Toggle、多栏和复杂代码块的映射尚未完成系统验收。
+- 子页面会按链接顺序追加到同一篇钉钉文档，不会还原为独立的钉钉页面树。
+- Toggle 会展开为普通引用文本，数据库会降级为 CSV 说明，多栏会按导出顺序线性排列。
+- 普通附件当前只保留明确降级说明，不会自动上传为钉钉附件。
 - Edge 当前页读取与 Native Messaging 真实链路尚未接入。
-- 钉钉图片的 24 小时持久性复查尚未完成。
 
-使用和错误契约见 [docs/migration-contract.md](docs/migration-contract.md)，开发细节见 [docs/development.md](docs/development.md)，工具选型见 [docs/tooling.md](docs/tooling.md)。
+使用和错误契约见 [docs/migration-contract.md](docs/migration-contract.md)，详细内容映射见 [docs/content-mapping.md](docs/content-mapping.md)，开发细节见 [docs/development.md](docs/development.md)，工具选型见 [docs/tooling.md](docs/tooling.md)。

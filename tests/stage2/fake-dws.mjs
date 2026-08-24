@@ -6,6 +6,10 @@ import process from "node:process";
 const args = process.argv.slice(2);
 const scenario = process.env.N2DD_FAKE_SCENARIO ?? "success";
 const logPath = process.env.N2DD_FAKE_LOG;
+const requestedImageCount = Number.parseInt(process.env.N2DD_FAKE_IMAGE_COUNT ?? "2", 10);
+const fakeImageCount = Number.isSafeInteger(requestedImageCount) && requestedImageCount >= 0
+  ? requestedImageCount
+  : 2;
 
 function option(name) {
   const index = args.indexOf(name);
@@ -116,8 +120,15 @@ if (args[0] === "auth" && args[1] === "status") {
         "Write-Output 'Notion2DingDing'",
         "```",
         "",
-        "![图片一](https://alidocs.dingtalk.com/resource/fake-image-1.png)",
-        "![图片二](https://alidocs.dingtalk.com/resource/fake-image-2.png)",
+        ...Array.from(
+          { length: fakeImageCount },
+          (_, index) =>
+            "![图片" +
+            (index + 1) +
+            "](https://alidocs.dingtalk.com/resource/fake-image-" +
+            (index + 1) +
+            ".png)",
+        ),
       ].join("\n"),
     },
   });

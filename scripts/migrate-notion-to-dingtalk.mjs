@@ -54,7 +54,7 @@ function printHelp() {
 
 可选参数：
   --name <标题>           目标文档标题，默认从入口 Markdown 文件名推导
-  --entry <相对路径>      导出包含多个 Markdown 时指定入口
+  --entry <相对路径>      无法唯一推断根页面时指定 Markdown 入口
   --output <路径>         中间 DOCX；必须位于仓库目录内
   --profile <profile>     固定 dws profile，所有读取和写入都使用同一值
   --force                 已有成功记录时明确创建新文档；未知状态仍禁止重试
@@ -517,6 +517,29 @@ async function main() {
     context.stage = "convert";
     progress(2, "预检 Notion 资源并生成自包含 DOCX");
     const conversion = runConversion(inputPath, outputPath, options.entry);
+    const imageAudit = conversion.imageAudit ?? {
+      sourceReferenceCount: conversion.assetCount ?? 0,
+      localizedFileCount: conversion.assetCount ?? 0,
+      localizedAssetCount: conversion.assetCount ?? 0,
+      hashesComplete: true,
+      allReferencesResolved: true,
+      outputMediaCount: conversion.docx.mediaCount ?? 0,
+      outputImageOccurrenceCount: conversion.docx.imageDrawingCount ??
+        conversion.docx.imageRelationshipCount ??
+        0,
+    };
+    const imageAuditMatches =
+      imageAudit.allReferencesResolved === true &&
+      imageAudit.hashesComplete === true &&
+      imageAudit.outputMediaCount >= imageAudit.localizedAssetCount &&
+      imageAudit.outputImageOccurrenceCount >= imageAudit.sourceReferenceCount;
+    if (!imageAuditMatches) {
+      throw new MigrationError(
+        "IMAGE_AUDIT_MISMATCH",
+        "图片审计不一致，已停止钉钉写入；请检查源引用、本地化文件、哈希和 DOCX 媒体数量。",
+        { stage: "convert", details: imageAudit },
+      );
+    }
 
     context.stage = "import";
     progress(3, "导入钉钉在线文档");
@@ -589,7 +612,11 @@ async function main() {
 
     const markdown = content.markdown ?? "";
     const readbackImageCount = (markdown.match(/!\[[^\]]*\]\(/gu) ?? []).length;
-    const expectedImageCount = conversion.docx.mediaCount ?? conversion.assetCount ?? 0;
+    const expectedImageCount =
+      imageAudit.sourceReferenceCount ??
+      conversion.docx.mediaCount ??
+      conversion.assetCount ??
+      0;
     const titleMatches = content.title === name;
     const bodyPresent = markdown.trim().length > 0;
     const imagesMatch = readbackImageCount >= expectedImageCount;
@@ -619,6 +646,14 @@ async function main() {
         sha256: conversion.docx.sha256,
         bytes: conversion.docx.bytes,
         assetCount: conversion.assetCount,
+        documentCount: conversion.documentCount ?? 1,
+        subpageCount: conversion.subpageCount ?? 0,
+        sourceCharacters: conversion.sourceCharacters ?? 0,
+        documents: conversion.documents ?? [],
+        imageAudit,
+        assets: conversion.assets ?? [],
+        mappings: conversion.mappings ?? {},
+        warnings: conversion.warnings ?? [],
       },
       remote: {
         taskId: context.remoteTaskId,
@@ -633,6 +668,7 @@ async function main() {
         expectedImageCount,
         readbackImageCount,
         imagesMatch,
+        imageAuditMatches,
       },
       report: reportPath,
       reused: false,

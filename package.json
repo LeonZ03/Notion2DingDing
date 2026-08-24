@@ -17,13 +17,15 @@
     "test:native": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-native-host.ps1 -TestOnly",
     "test:stage1": "powershell -NoProfile -ExecutionPolicy Bypass -File tests/stage1/run.ps1",
     "test:stage2": "node --test tests/stage2/*.test.mjs",
+    "test:stage3": "node --test tests/stage3/*.test.mjs",
     "migrate": "node scripts/migrate-notion-to-dingtalk.mjs",
-    "check": "npm run check:stage2",
+    "check": "npm run check:stage3",
     "check:extension": "npm run typecheck && npm run test:extension",
     "check:native": "npm run test:native",
     "check:stage1": "npm run test:stage1",
     "check:stage2": "npm run check:stage1 && npm run test:stage2",
-    "check:all": "npm run check:stage2 && npm run check:extension && npm run check:native"
+    "check:stage3": "npm run check:stage2 && npm run test:stage3",
+    "check:all": "npm run check:stage3 && npm run check:extension && npm run check:native"
   },
   "devDependencies": {
     "@types/chrome": "^0.1.31",
