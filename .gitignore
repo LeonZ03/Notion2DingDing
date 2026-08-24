@@ -1,0 +1,15 @@
+node_modules/
+dist/
+coverage/
+*.log
+
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+.env
+.env.*
+!.env.example
+
+apps/native-host/bin/

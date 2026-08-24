@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Notion2DingDing</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <main>
+      <header>
+        <p class="eyebrow">NOTION → DINGTALK</p>
+        <h1>Notion2DingDing</h1>
+        <p class="description">将当前 Notion 页面迁移成可编辑的钉钉文档。</p>
+      </header>
+
+      <section class="status-card" aria-live="polite">
+        <span class="status-dot" aria-hidden="true"></span>
+        <div id="status" data-kind="idle">正在检查本地助手…</div>
+      </section>
+
+      <button id="check-host" type="button">重新检查</button>
+      <p class="footnote">真实页面迁移将在下一阶段接入。</p>
+    </main>
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>

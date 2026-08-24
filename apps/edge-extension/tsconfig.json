@@ -1,0 +1,9 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "../../dist/edge-extension",
+    "rootDir": "src",
+    "types": ["chrome"]
+  },
+  "include": ["src/**/*.ts"]
+}

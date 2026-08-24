@@ -1,0 +1,101 @@
+:root {
+  color: #17211b;
+  background: #f4f6f1;
+  font-family:
+    Inter, "Segoe UI", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  width: 336px;
+  margin: 0;
+}
+
+main {
+  padding: 22px;
+}
+
+.eyebrow {
+  margin: 0 0 8px;
+  color: #42745a;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.13em;
+}
+
+h1 {
+  margin: 0;
+  font-size: 23px;
+  letter-spacing: -0.03em;
+}
+
+.description {
+  margin: 8px 0 18px;
+  color: #607067;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.status-card {
+  display: flex;
+  min-height: 62px;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid #dce4dc;
+  border-radius: 12px;
+  background: #ffffff;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.status-dot {
+  width: 9px;
+  height: 9px;
+  flex: 0 0 auto;
+  margin-top: 4px;
+  border-radius: 50%;
+  background: #a5aea8;
+}
+
+.status-card:has([data-kind="success"]) .status-dot {
+  background: #218a54;
+  box-shadow: 0 0 0 4px #dff3e8;
+}
+
+.status-card:has([data-kind="error"]) .status-dot {
+  background: #c54b43;
+  box-shadow: 0 0 0 4px #f8e1df;
+}
+
+button {
+  width: 100%;
+  margin-top: 12px;
+  padding: 10px 14px;
+  border: 0;
+  border-radius: 10px;
+  color: #ffffff;
+  background: #244f39;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 650;
+}
+
+button:hover:not(:disabled) {
+  background: #183d2a;
+}
+
+button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.footnote {
+  margin: 10px 0 0;
+  color: #849087;
+  font-size: 11px;
+  text-align: center;
+}

@@ -1,0 +1,27 @@
+{
+  "name": "notion2dingding",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24",
+    "npm": ">=11"
+  },
+  "scripts": {
+    "build": "npm run build:extension",
+    "build:extension": "tsc -p apps/edge-extension/tsconfig.json && node scripts/copy-extension-assets.mjs",
+    "build:native": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-native-host.ps1",
+    "typecheck": "tsc -p apps/edge-extension/tsconfig.json --noEmit",
+    "test": "npm run test:extension",
+    "test:extension": "npm run build:extension && node --test tests/extension/*.test.mjs",
+    "test:native": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-native-host.ps1 -TestOnly",
+    "check": "npm run check:extension",
+    "check:extension": "npm run typecheck && npm run test:extension",
+    "check:native": "npm run test:native",
+    "check:all": "npm run check:extension && npm run check:native"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.1.31",
+    "typescript": "^5.9.3"
+  }
+}

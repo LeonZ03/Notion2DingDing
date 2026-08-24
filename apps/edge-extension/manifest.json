@@ -1,0 +1,19 @@
+{
+  "manifest_version": 3,
+  "name": "Notion2DingDing",
+  "description": "将 Notion 页面迁移为可编辑的钉钉富文本文档。",
+  "version": "0.1.0",
+  "action": {
+    "default_title": "Notion2DingDing",
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "permissions": [
+    "activeTab",
+    "nativeMessaging",
+    "storage"
+  ]
+}
