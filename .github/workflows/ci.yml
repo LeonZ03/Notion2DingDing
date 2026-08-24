@@ -31,5 +31,8 @@ jobs:
       - name: Install JavaScript dependencies
         run: npm ci
 
+      - name: Install Pandoc
+        run: choco install pandoc --yes --no-progress
+
       - name: Check extension and native host
         run: npm run check:all

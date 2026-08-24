@@ -15,10 +15,12 @@
     "test": "npm run test:extension",
     "test:extension": "npm run build:extension && node --test tests/extension/*.test.mjs",
     "test:native": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-native-host.ps1 -TestOnly",
-    "check": "npm run check:extension",
+    "test:stage1": "powershell -NoProfile -ExecutionPolicy Bypass -File tests/stage1/run.ps1",
+    "check": "npm run check:stage1",
     "check:extension": "npm run typecheck && npm run test:extension",
     "check:native": "npm run test:native",
-    "check:all": "npm run check:extension && npm run check:native"
+    "check:stage1": "npm run test:stage1",
+    "check:all": "npm run check:stage1 && npm run check:extension && npm run check:native"
   },
   "devDependencies": {
     "@types/chrome": "^0.1.31",
