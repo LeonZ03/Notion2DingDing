@@ -1,5 +1,34 @@
 # Windows 开发指南
 
+## 0. 本地 CLI 安装与验收
+
+阶段 4 的用户级 CLI 不依赖 Edge 或 Go。程序、数据和命令入口分离：
+
+```text
+%LOCALAPPDATA%\Programs\Notion2DingDing   程序文件与所有权标记
+%LOCALAPPDATA%\Notion2DingDing            配置与最小幂等状态
+%LOCALAPPDATA%\Microsoft\WindowsApps\n2dd.cmd
+```
+
+```powershell
+npm run install:local
+n2dd doctor
+n2dd config --folder "<TARGET_FOLDER_NODE_ID>"
+n2dd migrate --input "C:\path\to\notion-export.zip"
+npm run upgrade:local
+npm run uninstall:local
+```
+
+安装和升级只复制迁移所需的 5 个运行时脚本，不复制夹具、源码历史或 `node_modules`。升级先构建同级暂存目录，再替换带所有权标记的旧程序目录；配置与最小状态独立保留。卸载在删除前校验程序、数据和启动器标记，不修改 PATH 或系统级注册表。
+
+隔离验收：
+
+```powershell
+npm run test:stage4
+```
+
+该测试在系统临时目录模拟全新用户根目录，完成安装、依赖缺失/就绪诊断、配置、夹具迁移、升级、卸载和防误删检查，最后永久删除整个测试根目录。
+
 ## 1. 扩展
 
 ```powershell

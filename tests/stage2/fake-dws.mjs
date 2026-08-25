@@ -48,7 +48,9 @@ function output(value, status = 0) {
 
 logCall();
 
-if (args[0] === "auth" && args[1] === "status") {
+if (args[0] === "--version") {
+  process.stdout.write("dws version v1.0.59 (stage4-fake)\n");
+} else if (args[0] === "auth" && args[1] === "status") {
   if (scenario === "unauthenticated") {
     output({ success: true, authenticated: false, token_valid: false });
   } else {
