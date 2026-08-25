@@ -7,6 +7,7 @@ import {
   readFileSync,
   readdirSync,
   rmSync,
+  rmdirSync,
   unlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -20,6 +21,8 @@ const cliPath = path.join(repoRoot, "scripts", "migrate-notion-to-dingtalk.mjs")
 const fakeDwsPath = path.join(testDirectory, "fake-dws.mjs");
 const fixturePath = path.join(repoRoot, "tests", "fixtures", "notion-export");
 const runtimeRoot = path.join(repoRoot, "artifacts", "stage2-tests");
+const stateRoot = path.join(runtimeRoot, "state");
+const temporaryRoot = path.join(runtimeRoot, "tool-temp");
 const runNonce = `${process.pid}-${Date.now()}`;
 
 function parseResult(stdout) {
@@ -68,12 +71,40 @@ function runMigration(name, scenario, extraArgs = [], input = fixturePath) {
         ...process.env,
         N2DD_FAKE_SCENARIO: scenario,
         N2DD_FAKE_LOG: logPath,
+        N2DD_STATE_DIRECTORY: stateRoot,
+        N2DD_TEMP_DIRECTORY: temporaryRoot,
       },
       maxBuffer: 32 * 1024 * 1024,
       windowsHide: true,
     },
   );
-  return { ...result, data: parseResult(result.stdout), calls: readCalls(logPath), workDirectory };
+  assert.equal(existsSync(outputPath), false, `${name} 结束后仍残留中间 DOCX`);
+  assert.equal(existsSync(temporaryRoot), false, `${name} 结束后仍残留临时任务目录`);
+  return {
+    ...result,
+    data: parseResult(result.stdout),
+    calls: readCalls(logPath),
+    workDirectory,
+    outputPath,
+  };
+}
+
+function assertMinimalState(result) {
+  assert.ok(result.data.stateRecord, "必须返回最小任务状态路径");
+  assert.ok(existsSync(result.data.stateRecord), "最小任务状态必须存在");
+  const text = readFileSync(result.data.stateRecord, "utf8");
+  for (const forbidden of [
+    fixturePath,
+    "output.docx",
+    '"input"',
+    '"entry"',
+    '"documents"',
+    '"assets"',
+    '"mappings"',
+    '"warnings"',
+  ]) {
+    assert.equal(text.includes(forbidden), false, `最小状态泄露了内容字段：${forbidden}`);
+  }
 }
 
 test.before(() => {
@@ -90,8 +121,11 @@ test("一条命令完成转换、导入和真实 URL 回读", () => {
   assert.equal(result.data.remote.documentUrl, "https://alidocs.dingtalk.com/i/nodes/fake-stage2-node");
   assert.equal(result.data.checks.expectedImageCount, 2);
   assert.equal(result.data.checks.readbackImageCount, 2);
+  assert.equal(result.data.local.docx.permanentlyDeleted, true);
+  assert.equal(result.data.cleanup.verified, true);
   assert.equal(result.calls.filter((call) => call.args.includes("+import")).length, 1);
   assert.equal(result.calls.filter((call) => call.args.includes("+fetch")).length, 1);
+  assertMinimalState(result);
 });
 
 test("损坏 ZIP 在写入钉钉前失败", () => {
@@ -101,6 +135,7 @@ test("损坏 ZIP 在写入钉钉前失败", () => {
   assert.notEqual(result.status, 0);
   assert.equal(result.data.error.code, "CONVERSION_FAILED");
   assert.equal(result.calls.some((call) => call.args.includes("+import")), false);
+  assert.equal(existsSync(result.data.stateRecord), false, "确定失败不应留下任务状态");
 });
 
 test("引用图片缺失时明确失败且不导入", () => {
@@ -134,6 +169,7 @@ test("目标无权限时返回明确错误且不误报成功", () => {
   assert.equal(result.data.error.code, "IMPORT_PERMISSION_DENIED");
   assert.equal(result.calls.filter((call) => call.args.includes("+import")).length, 1);
   assert.equal(result.calls.some((call) => call.args.includes("+fetch")), false);
+  assert.equal(existsSync(result.data.stateRecord), false, "权限失败不应留下任务状态");
 });
 
 test("写入状态未知时保留 taskId 并禁止自动重试", () => {
@@ -144,6 +180,7 @@ test("写入状态未知时保留 taskId 并禁止自动重试", () => {
   assert.equal(result.data.remoteTaskId, "fake-unknown-task");
   assert.equal(result.calls.filter((call) => call.args.includes("+import")).length, 1);
   assert.equal(result.calls.some((call) => call.args.includes("+fetch")), false);
+  assertMinimalState(result);
 
   const retry = runMigration("unknown", "unknown");
   assert.notEqual(retry.status, 0);
@@ -158,6 +195,7 @@ test("导入返回非 JSON 时按未知状态处理并锁止重试", () => {
   assert.equal(result.data.status, "unknown");
   assert.equal(result.data.error.code, "IMPORT_COMMIT_UNKNOWN");
   assert.equal(result.calls.filter((call) => call.args.includes("+import")).length, 1);
+  assertMinimalState(result);
 
   const retry = runMigration("malformed-import", "malformed-import");
   assert.notEqual(retry.status, 0);
@@ -179,5 +217,13 @@ test("目标目录与知识库参数必须且只能选择一个", () => {
 test.after(() => {
   if (process.env.N2DD_KEEP_TEST_ARTIFACTS !== "1") {
     rmSync(runtimeRoot, { recursive: true, force: true });
+    try {
+      rmdirSync(path.dirname(runtimeRoot));
+    } catch (error) {
+      if (!["ENOENT", "ENOTEMPTY", "EEXIST"].includes(error.code)) {
+        throw error;
+      }
+    }
+    assert.equal(existsSync(runtimeRoot), false, "阶段 2 测试数据必须永久删除");
   }
 });

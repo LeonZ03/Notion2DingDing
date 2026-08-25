@@ -6,6 +6,7 @@ import {
   mkdirSync,
   readFileSync,
   rmSync,
+  rmdirSync,
   unlinkSync,
 } from "node:fs";
 import path from "node:path";
@@ -22,6 +23,8 @@ const longFixture = path.join(fixtureRoot, "long-page");
 const multiImageFixture = path.join(fixtureRoot, "multi-image");
 const subpageFixture = path.join(fixtureRoot, "subpages-special");
 const runtimeRoot = path.join(repoRoot, "artifacts", "stage3-tests");
+const stateRoot = path.join(runtimeRoot, "state");
+const temporaryRoot = path.join(runtimeRoot, "tool-temp");
 const powershell = path.join(
   process.env.SystemRoot ?? "C:\\Windows",
   "System32",
@@ -65,6 +68,7 @@ function runMigration(name, fixture, imageCount, options = {}) {
   mkdirSync(workDirectory, { recursive: true });
   const logPath = path.join(workDirectory, "dws-calls.jsonl");
   const outputPath = path.join(workDirectory, "output.docx");
+  const capturePath = path.join(workDirectory, "test-capture.docx");
   const title = "阶段 3 自动验收-" + name + "-" + runNonce;
   const args = [
     cliPath,
@@ -74,11 +78,12 @@ function runMigration(name, fixture, imageCount, options = {}) {
     "fake-stage3-folder",
     "--name",
     title,
-    "--output",
-    outputPath,
     "--dws-path",
     fakeDwsPath,
   ];
+  if (!options.defaultOutput) {
+    args.push("--output", outputPath);
+  }
   if (options.force) {
     args.push("--force");
   }
@@ -90,16 +95,41 @@ function runMigration(name, fixture, imageCount, options = {}) {
       N2DD_FAKE_SCENARIO: options.scenario ?? "success",
       N2DD_FAKE_IMAGE_COUNT: String(imageCount),
       N2DD_FAKE_LOG: logPath,
+      N2DD_FAKE_CAPTURE_DOCX: capturePath,
+      N2DD_STATE_DIRECTORY: stateRoot,
+      N2DD_TEMP_DIRECTORY: temporaryRoot,
     },
     maxBuffer: 64 * 1024 * 1024,
     windowsHide: true,
   });
+  assert.equal(existsSync(outputPath), false, `${name} 结束后仍残留中间 DOCX`);
+  assert.equal(existsSync(temporaryRoot), false, `${name} 结束后仍残留临时任务目录`);
   return {
     ...result,
     data: parseJson(result.stdout, "迁移命令"),
     calls: readCalls(logPath),
     workDirectory,
+    capturePath,
   };
+}
+
+function assertMinimalState(result) {
+  assert.ok(result.data.stateRecord, "必须返回最小任务状态路径");
+  assert.ok(existsSync(result.data.stateRecord), "最小任务状态必须存在");
+  const text = readFileSync(result.data.stateRecord, "utf8");
+  for (const forbidden of [
+    fixtureRoot,
+    "output.docx",
+    "test-capture.docx",
+    '"input"',
+    '"entry"',
+    '"documents"',
+    '"assets"',
+    '"mappings"',
+    '"warnings"',
+  ]) {
+    assert.equal(text.includes(forbidden), false, `最小状态泄露了内容字段：${forbidden}`);
+  }
 }
 
 function verifyDocx(docxPath, expectedImages, requiredText) {
@@ -138,7 +168,9 @@ test.before(() => {
 });
 
 test("中文、URL 编码、嵌套子页面和特殊块生成明确映射报告", () => {
-  const result = runMigration("subpages-special", subpageFixture, 2);
+  const result = runMigration("subpages-special", subpageFixture, 2, {
+    defaultOutput: true,
+  });
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.data.success, true);
   assert.equal(result.data.local.documentCount, 3);
@@ -154,6 +186,9 @@ test("中文、URL 编码、嵌套子页面和特殊块生成明确映射报告"
   assert.equal(audit.outputImageOccurrenceCount, 2);
   assert.equal(audit.hashesComplete, true);
   assert.equal(result.data.checks.imageAuditMatches, true);
+  assert.equal(result.data.local.docx.permanentlyDeleted, true);
+  assert.equal(result.data.cleanup.verified, true);
+  assertMinimalState(result);
 
   const mappings = result.data.local.mappings;
   assert.equal(mappings.callout.detectedCount, 1);
@@ -183,7 +218,7 @@ test("中文、URL 编码、嵌套子页面和特殊块生成明确映射报告"
     "Callout",
     "Toggle",
   ]) {
-    verifyDocx(result.data.local.docx, 2, marker);
+    verifyDocx(result.capturePath, 2, marker);
   }
 });
 
@@ -196,11 +231,11 @@ test("长篇固定夹具完整进入 DOCX 并输出规模指标", () => {
   assert.equal(result.data.local.imageAudit.sourceReferenceCount, 0);
   assert.equal(result.data.local.imageAudit.outputImageOccurrenceCount, 0);
 
-  const verification = verifyDocx(result.data.local.docx, 0, "L30-FINAL");
+  const verification = verifyDocx(result.capturePath, 0, "L30-FINAL");
   assert.ok(verification.visibleTextCharacters >= 2200);
   assert.ok(verification.paragraphCount >= 80);
-  verifyDocx(result.data.local.docx, 0, "L15");
-  verifyDocx(result.data.local.docx, 0, "长篇文档稳定性验证");
+  verifyDocx(result.capturePath, 0, "L15");
+  verifyDocx(result.capturePath, 0, "长篇文档稳定性验证");
 });
 
 test("八个图片引用按 SHA-256 去重并可核对全部输出位置", () => {
@@ -219,7 +254,7 @@ test("八个图片引用按 SHA-256 去重并可核对全部输出位置", () =>
   assert.equal(first.data.checks.expectedImageCount, 8);
   assert.equal(first.data.checks.readbackImageCount, 8);
 
-  const verification = verifyDocx(first.data.local.docx, 2, "M08-FINAL");
+  const verification = verifyDocx(first.capturePath, 2, "M08-FINAL");
   assert.equal(verification.imageDrawingCount, 8);
 
   const repeated = runMigration("multi-image", multiImageFixture, 8);
@@ -246,10 +281,19 @@ test("缺失的嵌套子页面在调用钉钉前明确失败", () => {
   assert.equal(result.data.error.code, "CONVERSION_FAILED");
   assert.match(result.data.error.message, /子页面缺失/u);
   assert.equal(result.calls.some((call) => call.args.includes("+import")), false);
+  assert.equal(existsSync(result.data.stateRecord), false, "确定失败不应留下任务状态");
 });
 
 test.after(() => {
   if (process.env.N2DD_KEEP_TEST_ARTIFACTS !== "1") {
     rmSync(runtimeRoot, { recursive: true, force: true });
+    try {
+      rmdirSync(path.dirname(runtimeRoot));
+    } catch (error) {
+      if (!["ENOENT", "ENOTEMPTY", "EEXIST"].includes(error.code)) {
+        throw error;
+      }
+    }
+    assert.equal(existsSync(runtimeRoot), false, "阶段 3 测试数据必须永久删除");
   }
 });

@@ -40,7 +40,10 @@ npm run migrate -- --input "D:\Downloads\Notion-Export.zip" --folder "目标文�
 - 同一输入、标题、目标和 profile 会生成稳定的本地任务 ID。已有成功记录时默认复用结果，避免重复创建文档；确需新建时使用 `--force`。
 - 写入结果未知时记录 `taskId`（若服务端提供），状态为 `unknown`，并禁止自动重试，避免重复文档。
 - 使用 `--profile` 时，登录检查、导入和回读始终使用同一个 profile。
-- 运行记录和中间 DOCX 位于 `artifacts/migrations/`，该目录不进入 Git。
+- 中间 DOCX、解压目录和图片副本只存在于单次任务目录；成功、确定失败和写入状态未知三类结束路径都会用文件系统永久删除，并验证路径已经不存在，不经过回收站。
+- 只有永久清理通过后才会报告迁移成功；清理失败返回 `CLEANUP_FAILED` 和准确路径，禁止伪装成功或静默忽略。
+- 为防止重复创建文档，工具只在 `%LOCALAPPDATA%\Notion2DingDing\state\migrations\` 保留不含正文、图片、文件名、输入路径和 DOCX 路径的最小幂等状态。确定失败不新增状态；成功或写入结果未知时保留任务哈希、目标、远端标识、检查结论和清理结论。
+- 用户传入的 Notion ZIP 或目录属于源数据，迁移命令不会自动删除。若确认导出 ZIP 也不需要，应由用户在迁移成功后单独明确删除。
 
 ## 主要错误码
 
@@ -52,6 +55,7 @@ npm run migrate -- --input "D:\Downloads\Notion-Export.zip" --folder "目标文�
 | `IMPORT_PERMISSION_DENIED` | 当前账号对目标目录或知识库无写权限 |
 | `IMPORT_COMMIT_UNKNOWN` | 写入结果未知；先按任务记录人工确认，不能直接重试 |
 | `READBACK_FAILED` / `READBACK_MISMATCH` | 服务端可能已创建文档，但验证未通过；按返回链接或任务 ID 确认 |
+| `CLEANUP_FAILED` | 中间数据未能永久删除；命令不会报告成功，按返回路径人工处理后再继续 |
 
 ## 图片托管验收
 

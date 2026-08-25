@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   existsSync,
   lstatSync,
@@ -13,6 +13,8 @@ import {
   readdirSync,
   realpathSync,
   renameSync,
+  rmSync,
+  rmdirSync,
   statSync,
   writeFileSync,
 } from "node:fs";
@@ -55,7 +57,7 @@ function printHelp() {
 可选参数：
   --name <标题>           目标文档标题，默认从入口 Markdown 文件名推导
   --entry <相对路径>      无法唯一推断根页面时指定 Markdown 入口
-  --output <路径>         中间 DOCX；必须位于仓库目录内
+  --output <路径>         高级/测试用途；中间 DOCX 在结束前永久删除
   --profile <profile>     固定 dws profile，所有读取和写入都使用同一值
   --force                 已有成功记录时明确创建新文档；未知状态仍禁止重试
   --dws-path <路径>       高级/测试用途，指定 dws.ps1、dws.exe 或 Node 脚本
@@ -382,19 +384,121 @@ function runConversion(inputPath, outputPath, entry) {
 function writeJsonAtomic(filePath, value) {
   mkdirSync(path.dirname(filePath), { recursive: true });
   const temporary = `${filePath}.${process.pid}.tmp`;
-  writeFileSync(temporary, `${JSON.stringify(value, null, 2)}\n`, "utf8");
-  renameSync(temporary, filePath);
+  try {
+    writeFileSync(temporary, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+    renameSync(temporary, filePath);
+  } finally {
+    rmSync(temporary, { force: true });
+  }
 }
 
-function readExistingReport(reportPath) {
-  if (!existsSync(reportPath)) {
+function readExistingState(statePath) {
+  if (!existsSync(statePath)) {
     return undefined;
   }
   try {
-    return JSON.parse(readFileSync(reportPath, "utf8"));
+    return JSON.parse(readFileSync(statePath, "utf8"));
   } catch {
-    throw new MigrationError("REPORT_CORRUPTED", `任务记录损坏：${reportPath}`);
+    throw new MigrationError("STATE_CORRUPTED", `最小任务状态损坏：${statePath}`);
   }
+}
+
+function resolveStateDirectory() {
+  if (process.env.N2DD_STATE_DIRECTORY) {
+    return path.resolve(process.env.N2DD_STATE_DIRECTORY);
+  }
+  const localAppData = process.env.LOCALAPPDATA ||
+    (process.env.USERPROFILE ? path.join(process.env.USERPROFILE, "AppData", "Local") : "");
+  if (!localAppData) {
+    throw new MigrationError(
+      "STATE_DIRECTORY_UNAVAILABLE",
+      "无法确定 Windows LocalAppData 目录，不能安全保存幂等状态。",
+    );
+  }
+  return path.join(localAppData, "Notion2DingDing", "state", "migrations");
+}
+
+function ensureStateDirectoryWritable(directory) {
+  mkdirSync(directory, { recursive: true });
+  const probe = path.join(directory, `.write-probe-${process.pid}-${randomUUID()}`);
+  try {
+    writeFileSync(probe, "", { encoding: "utf8", flag: "wx" });
+  } catch (error) {
+    throw new MigrationError(
+      "STATE_DIRECTORY_NOT_WRITABLE",
+      `最小任务状态目录不可写：${error.message}`,
+    );
+  } finally {
+    rmSync(probe, { force: true });
+  }
+  if (existsSync(probe)) {
+    throw new MigrationError(
+      "STATE_PROBE_CLEANUP_FAILED",
+      "状态目录写入探针无法永久删除，已停止迁移。",
+    );
+  }
+}
+
+function ensureCleanupTarget(targetPath) {
+  const resolved = path.resolve(targetPath);
+  const relative = path.relative(repoRoot, resolved);
+  if (
+    relative === "" ||
+    relative === ".." ||
+    relative.startsWith(`..${path.sep}`) ||
+    path.isAbsolute(relative)
+  ) {
+    throw new Error(`拒绝清理仓库范围外或仓库根目录：${resolved}`);
+  }
+  return resolved;
+}
+
+function removeEmptyDirectory(directory) {
+  if (!directory) {
+    return;
+  }
+  try {
+    rmdirSync(directory);
+  } catch (error) {
+    if (!["ENOENT", "ENOTEMPTY", "EEXIST"].includes(error.code)) {
+      throw error;
+    }
+  }
+}
+
+function permanentlyDeleteOwnedContent({ taskDirectory, outputPath, temporaryRoot }) {
+  const targets = taskDirectory ? [taskDirectory] : outputPath ? [outputPath] : [];
+  const failures = [];
+  for (const target of targets) {
+    try {
+      const resolved = ensureCleanupTarget(target);
+      rmSync(resolved, {
+        recursive: true,
+        force: true,
+        maxRetries: 3,
+        retryDelay: 100,
+      });
+      if (existsSync(resolved)) {
+        throw new Error("删除后目标仍然存在");
+      }
+    } catch (error) {
+      failures.push({ target: path.resolve(target), message: error.message });
+    }
+  }
+  if (taskDirectory && failures.length === 0) {
+    try {
+      removeEmptyDirectory(temporaryRoot);
+    } catch (error) {
+      failures.push({ target: path.resolve(temporaryRoot), message: error.message });
+    }
+  }
+  return {
+    success: failures.length === 0,
+    permanent: true,
+    verified: failures.length === 0,
+    deletedTargetCount: targets.length,
+    failures,
+  };
 }
 
 function dwsErrorInfo(data) {
@@ -441,19 +545,45 @@ async function main() {
 
   const startedAt = new Date().toISOString();
   const inputCandidate = path.resolve(options.input);
-  let reportPath;
-  let taskId;
+  let statePath = "";
+  let taskId = "";
+  let inputHash = "";
+  let targetType = "";
+  let targetId = "";
+  let outputPath = "";
+  let taskDirectory = "";
+  let temporaryRoot = "";
+  let cleanupAttempted = false;
+  let cleanupResult = {
+    success: true,
+    permanent: true,
+    verified: true,
+    deletedTargetCount: 0,
+    failures: [],
+  };
   let context = { stage: "preflight", remoteTaskId: "", documentUrl: "" };
+
+  const performCleanup = () => {
+    if (!cleanupAttempted) {
+      cleanupAttempted = true;
+      cleanupResult = permanentlyDeleteOwnedContent({
+        taskDirectory,
+        outputPath,
+        temporaryRoot,
+      });
+    }
+    return cleanupResult;
+  };
 
   try {
     if (!existsSync(inputCandidate)) {
       throw new MigrationError("INPUT_NOT_FOUND", `输入路径不存在：${inputCandidate}`);
     }
     const inputPath = realpathSync.native(inputCandidate);
-    const inputHash = fingerprintInput(inputPath);
+    inputHash = fingerprintInput(inputPath);
     const name = options.name?.trim() || defaultTitle(options, inputPath);
-    const targetType = options.folder ? "folder" : "workspace";
-    const targetId = options.folder ?? options.workspace;
+    targetType = options.folder ? "folder" : "workspace";
+    targetId = options.folder ?? options.workspace;
     taskId = createHash("sha256")
       .update(
         JSON.stringify({
@@ -469,27 +599,55 @@ async function main() {
       .digest("hex")
       .slice(0, 24);
 
-    const artifactDirectory = path.join(repoRoot, "artifacts", "migrations");
-    reportPath = path.join(artifactDirectory, `${taskId}.json`);
-    const existing = readExistingReport(reportPath);
-    if (existing?.status === "unknown") {
+    const stateDirectory = resolveStateDirectory();
+    ensureStateDirectoryWritable(stateDirectory);
+    statePath = path.join(stateDirectory, `${taskId}.json`);
+    const existing = readExistingState(statePath);
+    if (["unknown", "cleanup_failed"].includes(existing?.status)) {
       throw new MigrationError(
-        "PREVIOUS_COMMIT_UNKNOWN",
-        "该任务上次写入状态未知。请先根据任务记录回读或人工确认，禁止直接重试。",
+        existing.status === "cleanup_failed"
+          ? "PREVIOUS_CLEANUP_FAILED"
+          : "PREVIOUS_COMMIT_UNKNOWN",
+        existing.status === "cleanup_failed"
+          ? "该任务上次未能完成永久清理。请先人工处理，再决定是否继续。"
+          : "该任务上次写入状态未知。请先根据最小任务状态回读或人工确认，禁止直接重试。",
         { status: "unknown", stage: existing.stage ?? "import" },
       );
     }
     if (existing?.success && !options.force) {
       progress(5, "发现相同输入和目标的成功记录，跳过重复写入");
-      outputResult({ ...existing, reused: true });
+      outputResult({ ...existing, stateRecord: statePath, reused: true });
       return;
     }
 
-    const outputPath = path.resolve(
-      options.output ?? path.join(artifactDirectory, `${taskId}.docx`),
+    temporaryRoot = path.resolve(
+      process.env.N2DD_TEMP_DIRECTORY ?? path.join(repoRoot, ".n2dd-tmp"),
     );
+    ensureInsideRepository(temporaryRoot, "临时任务目录");
+    if (options.output) {
+      outputPath = path.resolve(options.output);
+      ensureInsideRepository(outputPath, "DOCX 输出路径");
+      if (existsSync(outputPath)) {
+        throw new MigrationError(
+          "OUTPUT_ALREADY_EXISTS",
+          `拒绝覆盖或删除已有文件：${outputPath}`,
+        );
+      }
+      const outputParent = path.dirname(outputPath);
+      if (!existsSync(outputParent) || !statSync(outputParent).isDirectory()) {
+        throw new MigrationError(
+          "OUTPUT_PARENT_NOT_FOUND",
+          `--output 的父目录必须已经存在：${outputParent}`,
+        );
+      }
+    } else {
+      taskDirectory = path.join(
+        temporaryRoot,
+        `${taskId}-${process.pid}-${randomUUID()}`,
+      );
+      outputPath = path.join(taskDirectory, "document.docx");
+    }
     const relativeDocx = ensureInsideRepository(outputPath, "DOCX 输出路径");
-    mkdirSync(path.dirname(outputPath), { recursive: true });
 
     progress(1, "检查 Pandoc、dws 与登录状态");
     if (!existsSync(powershell)) {
@@ -516,6 +674,9 @@ async function main() {
 
     context.stage = "convert";
     progress(2, "预检 Notion 资源并生成自包含 DOCX");
+    if (taskDirectory) {
+      mkdirSync(taskDirectory, { recursive: true });
+    }
     const conversion = runConversion(inputPath, outputPath, options.entry);
     const imageAudit = conversion.imageAudit ?? {
       sourceReferenceCount: conversion.assetCount ?? 0,
@@ -629,22 +790,59 @@ async function main() {
     }
 
     context.stage = "complete";
-    const result = {
+    const completedAt = new Date().toISOString();
+    const cleanupAudit = performCleanup();
+    if (!cleanupAudit.success) {
+      throw new MigrationError(
+        "CLEANUP_FAILED",
+        "钉钉文档已通过回读，但本地中间数据未能全部永久删除，不能报告成功。",
+        {
+          stage: "cleanup",
+          status: "cleanup_failed",
+          details: { failures: cleanupAudit.failures },
+        },
+      );
+    }
+    const remote = {
+      taskId: context.remoteTaskId,
+      documentUrl: context.documentUrl,
+      nodeId: content.nodeId || documentNodeId(context.documentUrl),
+      documentType: imported.data.documentType ?? "",
+    };
+    const checks = {
+      titleMatches,
+      bodyPresent,
+      expectedImageCount,
+      readbackImageCount,
+      imagesMatch,
+      imageAuditMatches,
+    };
+    const state = {
+      recordVersion: 1,
       success: true,
       status: "success",
       taskId,
       startedAt,
-      completedAt: new Date().toISOString(),
-      source: {
-        input: inputPath,
-        sha256: inputHash,
-        entry: conversion.entry,
-      },
+      completedAt,
+      source: { sha256: inputHash },
       target: { type: targetType, id: targetId },
+      remote,
+      checks,
+      cleanup: cleanupAudit,
+    };
+    writeJsonAtomic(statePath, state);
+    const result = {
+      ...state,
+      source: {
+        sha256: inputHash,
+        inputPreserved: true,
+      },
       local: {
-        docx: outputPath,
-        sha256: conversion.docx.sha256,
-        bytes: conversion.docx.bytes,
+        docx: {
+          sha256: conversion.docx.sha256,
+          bytes: conversion.docx.bytes,
+          permanentlyDeleted: true,
+        },
         assetCount: conversion.assetCount,
         documentCount: conversion.documentCount ?? 1,
         subpageCount: conversion.subpageCount ?? 0,
@@ -655,46 +853,82 @@ async function main() {
         mappings: conversion.mappings ?? {},
         warnings: conversion.warnings ?? [],
       },
-      remote: {
-        taskId: context.remoteTaskId,
-        documentUrl: context.documentUrl,
-        nodeId: content.nodeId || documentNodeId(context.documentUrl),
-        title: content.title,
-        documentType: imported.data.documentType ?? "",
-      },
-      checks: {
-        titleMatches,
-        bodyPresent,
-        expectedImageCount,
-        readbackImageCount,
-        imagesMatch,
-        imageAuditMatches,
-      },
-      report: reportPath,
+      stateRecord: statePath,
       reused: false,
     };
-    writeJsonAtomic(reportPath, result);
     progress(5, `迁移成功：${context.documentUrl}`);
     outputResult(result);
   } catch (error) {
+    const cleanupAudit = performCleanup();
+    const effectiveError = cleanupAudit.success
+      ? error
+      : new MigrationError(
+        "CLEANUP_FAILED",
+        "本地中间数据未能全部永久删除；已停止并返回待人工处理的准确路径。",
+        {
+          stage: "cleanup",
+          status: "cleanup_failed",
+          details: {
+            originalError: {
+              code: error.code ?? "UNEXPECTED_ERROR",
+              stage: error.stage ?? context.stage,
+              status: error.status ?? "failed",
+            },
+            failures: cleanupAudit.failures,
+          },
+        },
+      );
     const failure = {
       success: false,
-      status: error.status ?? "failed",
-      taskId: taskId ?? "",
+      status: effectiveError.status ?? "failed",
+      taskId,
       startedAt,
       failedAt: new Date().toISOString(),
-      stage: error.stage ?? context.stage,
+      stage: effectiveError.stage ?? context.stage,
       remoteTaskId: context.remoteTaskId,
       documentUrl: context.documentUrl,
       error: {
-        code: error.code ?? "UNEXPECTED_ERROR",
-        message: error.message,
-        details: error.details ?? {},
+        code: effectiveError.code ?? "UNEXPECTED_ERROR",
+        message: effectiveError.message,
+        details: effectiveError.details ?? {},
       },
-      report: reportPath ?? "",
+      cleanup: cleanupAudit,
+      stateRecord: statePath,
     };
-    if (reportPath) {
-      writeJsonAtomic(reportPath, failure);
+    const previousStateError = [
+      "PREVIOUS_COMMIT_UNKNOWN",
+      "PREVIOUS_CLEANUP_FAILED",
+    ].includes(effectiveError.code);
+    const shouldPersistState =
+      !previousStateError &&
+      Boolean(statePath) &&
+      (["unknown", "cleanup_failed"].includes(failure.status) ||
+        Boolean(context.documentUrl));
+    if (shouldPersistState) {
+      const minimalState = {
+        recordVersion: 1,
+        success: false,
+        status: failure.status,
+        taskId,
+        startedAt,
+        updatedAt: failure.failedAt,
+        stage: failure.stage,
+        source: { sha256: inputHash },
+        target: { type: targetType, id: targetId },
+        remote: {
+          taskId: context.remoteTaskId,
+          documentUrl: context.documentUrl,
+          nodeId: documentNodeId(context.documentUrl),
+        },
+        error: { code: failure.error.code },
+        cleanup: cleanupAudit,
+      };
+      try {
+        writeJsonAtomic(statePath, minimalState);
+      } catch (stateError) {
+        failure.error.details.stateWriteError = stateError.message;
+        failure.stateRecord = "";
+      }
     }
     outputResult(failure);
     process.exitCode = 1;

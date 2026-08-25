@@ -7,13 +7,15 @@ Add-Type -AssemblyName System.IO.Compression.FileSystem
 
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
 $fixtureRoot = Join-Path $repoRoot 'tests\fixtures\notion-export'
-$artifactRoot = Join-Path $repoRoot 'artifacts\stage1'
 $convertScript = Join-Path $repoRoot 'scripts\convert-notion-export.ps1'
-$directoryOutput = Join-Path $artifactRoot 'notion-stage1-directory.docx'
-$zipOutput = Join-Path $artifactRoot 'notion-stage1-zip.docx'
-$temporaryZip = Join-Path ([IO.Path]::GetTempPath()) ('notion2dingding-fixture-' + [Guid]::NewGuid().ToString('N') + '.zip')
+$temporaryBase = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\') + '\'
+$runRoot = Join-Path $temporaryBase ('notion2dingding-stage1-' + [Guid]::NewGuid().ToString('N'))
+$directoryOutput = Join-Path $runRoot 'notion-stage1-directory.docx'
+$zipOutput = Join-Path $runRoot 'notion-stage1-zip.docx'
+$temporaryZip = Join-Path $runRoot 'notion-stage1-fixture.zip'
+$completed = $false
 
-[IO.Directory]::CreateDirectory($artifactRoot) | Out-Null
+[IO.Directory]::CreateDirectory($runRoot) | Out-Null
 
 try {
     Write-Host '=== 使用目录输入验证 ==='
@@ -31,19 +33,26 @@ try {
         -ExpectedImageCount 2 `
         -RequiredText @('阶段 1 验证页面', '图片一', '图片二')
 
-    [pscustomobject]@{
-        success         = $true
-        directoryOutput = $directoryOutput
-        zipOutput       = $zipOutput
-    } | ConvertTo-Json
+    $completed = $true
 }
 finally {
-    $resolvedTemporaryZip = [IO.Path]::GetFullPath($temporaryZip)
-    $temporaryBase = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\') + '\'
+    $resolvedRunRoot = [IO.Path]::GetFullPath($runRoot).TrimEnd('\')
     if (
-        $resolvedTemporaryZip.StartsWith($temporaryBase, [StringComparison]::OrdinalIgnoreCase) -and
-        [IO.Path]::GetFileName($resolvedTemporaryZip).StartsWith('notion2dingding-fixture-', [StringComparison]::Ordinal)
+        $resolvedRunRoot.StartsWith($temporaryBase, [StringComparison]::OrdinalIgnoreCase) -and
+        [IO.Path]::GetFileName($resolvedRunRoot).StartsWith('notion2dingding-stage1-', [StringComparison]::Ordinal)
     ) {
-        Remove-Item -LiteralPath $resolvedTemporaryZip -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $resolvedRunRoot -Recurse -Force -ErrorAction Stop
+        if (Test-Path -LiteralPath $resolvedRunRoot) {
+            throw "阶段 1 临时数据未能永久删除：$resolvedRunRoot"
+        }
+    }
+    else {
+        throw "拒绝清理未通过边界校验的阶段 1 路径：$resolvedRunRoot"
     }
 }
+
+[pscustomobject]@{
+    success           = $completed
+    cleanupPermanent  = $true
+    cleanupVerified   = $true
+} | ConvertTo-Json

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
-import { appendFileSync, existsSync, readFileSync } from "node:fs";
+import { appendFileSync, copyFileSync, existsSync, readFileSync } from "node:fs";
+import path from "node:path";
 import process from "node:process";
 
 const args = process.argv.slice(2);
@@ -54,6 +55,10 @@ if (args[0] === "auth" && args[1] === "status") {
     output({ success: true, authenticated: true, token_valid: true });
   }
 } else if (args[0] === "doc" && args[1] === "+import") {
+  const capturePath = process.env.N2DD_FAKE_CAPTURE_DOCX;
+  if (capturePath) {
+    copyFileSync(path.resolve(option("--file")), path.resolve(capturePath));
+  }
   if (scenario === "malformed-import") {
     process.stdout.write("服务端连接在返回结果前中断\n");
     process.exitCode = 1;
