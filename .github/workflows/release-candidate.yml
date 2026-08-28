@@ -45,9 +45,19 @@ jobs:
 
       - name: Build release candidate
         shell: powershell
-        run: >-
-          powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-release.ps1
-          -PublishedExtensionId "${{ inputs.published_extension_id }}"
+        env:
+          N2DD_PUBLISHED_EXTENSION_ID: ${{ inputs.published_extension_id }}
+        run: |
+          $buildArguments = @(
+            '-NoProfile',
+            '-ExecutionPolicy', 'Bypass',
+            '-File', 'scripts/build-release.ps1'
+          )
+          if (-not [string]::IsNullOrWhiteSpace($env:N2DD_PUBLISHED_EXTENSION_ID)) {
+            $buildArguments += @('-PublishedExtensionId', $env:N2DD_PUBLISHED_EXTENSION_ID)
+          }
+          & powershell @buildArguments
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Verify release package and installer
         run: npm run test:stage7
