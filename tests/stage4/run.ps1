@@ -475,6 +475,7 @@ try {
 
     $env:N2DD_FAKE_SCENARIO = 'layout-update-unknown-once'
     $env:N2DD_FAKE_TABLE_BLOCK_PREFIX = 'fake-resume-layout'
+    # 恢复用例故意不传 -ForceMigration；显式 force 的语义是允许再次导出。
     $layoutResumeArguments = @(
         '-Headless',
         '-InputPath', $layoutFixture,
@@ -482,8 +483,7 @@ try {
         '-TargetId', 'fake-layout-resume-folder',
         '-TargetDisplayName', '阶段 4 分栏恢复验证',
         '-Profile', 'isolated-profile',
-        '-DwsCommand', $fakeNpmDws,
-        '-ForceMigration'
+        '-DwsCommand', $fakeNpmDws
     )
     $layoutUnknown = Invoke-JsonScript -Script $installedGui -Arguments $layoutResumeArguments -ExpectedExitCode 1
     Assert-True -Condition ($layoutUnknown.success -eq $false) -Message '分栏首次更新未知时不应报告成功。'
@@ -540,6 +540,7 @@ try {
     $env:N2DD_FAKE_SUBPAGE_LINKS = $subpageDefinitions | ConvertTo-Json -Depth 5 -Compress
     $env:N2DD_FAKE_SUBPAGE_BLOCK_PREFIX = 'fake-resume-subpage'
     $env:N2DD_FAKE_SCENARIO = 'subpage-update-unknown-once'
+    # 默认执行才会安全恢复已有文档；force 应重新创建文档。
     $subpageArguments = @(
         '-Headless',
         '-InputPath', $subpageFixture,
@@ -547,8 +548,7 @@ try {
         '-TargetId', 'fake-subpage-resume-folder',
         '-TargetDisplayName', '阶段 4 子页面目录恢复验证',
         '-Profile', 'isolated-profile',
-        '-DwsCommand', $fakeNpmDws,
-        '-ForceMigration'
+        '-DwsCommand', $fakeNpmDws
     )
     $subpageUnknown = Invoke-JsonScript -Script $installedGui -Arguments $subpageArguments -ExpectedExitCode 1
     Assert-True -Condition ($subpageUnknown.success -eq $false) -Message '子页面目录首次更新未知时不应报告成功。'
@@ -673,6 +673,7 @@ try {
     $env:N2DD_FAKE_SCENARIO = 'todo-update-unknown-once'
     $env:N2DD_FAKE_TODO_STATES = 'checked,unchecked'
     $env:N2DD_FAKE_TODO_BLOCK_PREFIX = 'fake-resume-todo'
+    # 默认执行才会安全恢复已有文档；force 应重新创建文档。
     $resumeArguments = @(
         '-Headless',
         '-InputPath', $todoFixture,
@@ -680,8 +681,7 @@ try {
         '-TargetId', 'fake-resume-folder',
         '-TargetDisplayName', '阶段 4 待办恢复验证',
         '-Profile', 'isolated-profile',
-        '-DwsCommand', $fakeNpmDws,
-        '-ForceMigration'
+        '-DwsCommand', $fakeNpmDws
     )
     $todoUnknown = Invoke-JsonScript -Script $installedGui -Arguments $resumeArguments -ExpectedExitCode 1
     Assert-True -Condition ($todoUnknown.success -eq $false) -Message '待办首次写入未知时不应报告成功。'
@@ -779,6 +779,7 @@ ping -4 -c 3 baidu.com</code></pre>
 
     $env:N2DD_FAKE_SCENARIO = 'code-update-unknown-once'
     $env:N2DD_FAKE_CODE_BLOCK_PREFIX = 'fake-resume-code'
+    # 默认执行才会安全恢复已有文档；force 应重新创建文档。
     $codeResumeArguments = @(
         '-Headless',
         '-InputPath', $codeFixture,
@@ -786,8 +787,7 @@ ping -4 -c 3 baidu.com</code></pre>
         '-TargetId', 'fake-code-resume-folder',
         '-TargetDisplayName', '阶段 4 代码块恢复验证',
         '-Profile', 'isolated-profile',
-        '-DwsCommand', $fakeNpmDws,
-        '-ForceMigration'
+        '-DwsCommand', $fakeNpmDws
     )
     $codeUnknown = Invoke-JsonScript -Script $installedGui -Arguments $codeResumeArguments -ExpectedExitCode 1
     Assert-True -Condition ($codeUnknown.success -eq $false) -Message '代码块首次写入未知时不应报告成功。'
