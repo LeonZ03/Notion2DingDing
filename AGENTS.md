@@ -484,6 +484,7 @@ Windows 本地迁移工具（当前主线）
 - Native Host 安装器支持同时写入固定开发扩展 ID和 Edge Add-ons 正式 ID；发布构建在提供 `-PublishedExtensionId` 后才标记商店提交就绪。阶段 7 隔离测试使用临时正式 ID验证两个 `allowed_origins`，并在临时 Windows 用户目录真实完成单文件 EXE 安装、核心/Host/启动器核对、卸载和路径不存在检查，没有修改当前用户真实安装或注册表。
 - 新增 `PRIVACY.md`、`THIRD_PARTY_NOTICES.md`、正式版安装说明和 Edge 商店提交文案；内容明确本地处理、用户主动向钉钉写入、无项目中转服务器/广告/分析/遥测、最小状态和永久清理规则，并逐项解释 `activeTab`、`scripting`、`nativeMessaging`、`storage` 权限。
 - 新增 GitHub Actions `release-candidate.yml`：标签或人工触发时执行发布级回归、构建候选包、阶段 7 隔离安装验收并上传候选产物，但不会自动创建 GitHub Release 或提交 Edge Add-ons。`npm run check:stage7` 已在本机通过：扩展 8/8、阶段 6 UI 3/3、全部 Go 包及阶段 7 Edge 包/安装卸载/正式 ID/校验和/隐私与清理均成功。
+- v0.1.0 首次推送后的远程 CI 发现阶段 2“回读未知状态恢复”用例仍由测试辅助函数无条件附加 `--force`，与“显式再次导出允许重新创建”的现行产品语义冲突；迁移核心未发生重复导入回归。测试现可按场景省略 `--force`，恢复用例会走默认回读恢复路径。本地单项、阶段 2 的 14/14 和 `npm run check:stage7` 均已通过，待修复提交与 v0.1.0 标签推送后由远程 CI 最终确认。
 - Microsoft Partner Center 已完成个人开发者验证并显示 `Authorized`；已创建 Notion2DingDing 草稿、上传通过验证的 0.1.0 商店 ZIP，并取得 Microsoft Store ID `0RDCKDHG1ZBN`、CRX ID `pgjapgiiikkdkmcjmahnggdbfglfihbp`、Product ID `1e239b11-c948-4f7d-a28d-4e39c7d09dc3`。商店简体中文说明、图标、权限/隐私表单已保存完成，尚未提交审核。
 - 本机安装版本地核心已执行 `npm run upgrade:local`，诊断六项全部 `ready: true`；Native Host 和注册信息未修改。封面能力来自已安装 DWS 的官方文档资源 shortcut，未自行猜测私有接口。
 - 当前 Windows 用户的本地工具和 Native Host 已在上述全量回归后分别通过 `npm run upgrade:local`、`npm run upgrade:native` 升级；正常用户权限下 `npm run doctor:native` 返回 Host `0.3.1`、`ready: true`、`authenticated: true`、`configured: true`，保存位置仍为“Notion2DingDing 验证输出”。仓库 `artifacts` 与 `.n2dd-tmp` 均不存在。
@@ -510,7 +511,7 @@ Windows 本地迁移工具（当前主线）
 
 下一步：
 
-1. 为未签名 v0.1.0 补齐 SmartScreen、SHA-256 和官方来源提示，重新执行发布级构建、安装/卸载与内容审计。
+1. 推送阶段 2 CI 用例修复，把尚未创建 GitHub Release 的 v0.1.0 标签更新到修复提交，并等待主 CI 与发布候选工作流通过。
 2. 创建 GitHub v0.1.0 Release，上传安装器、备用包、校验和、隐私与第三方组件说明，并验证扩展内下载链接可用。
 3. 在 Microsoft Partner Center 提交已经完成资料和正式 CRX ID配置的 Edge Add-ons 草稿审核，记录审核状态。
 4. 后续版本再确定 Windows 安装器代码签名证书/主体，并在干净 Windows 10/11 环境补做签名版升级闭环。

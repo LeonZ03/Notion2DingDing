@@ -42,7 +42,14 @@ function readCalls(logPath) {
     .map((line) => JSON.parse(line));
 }
 
-function runMigration(name, scenario, extraArgs = [], input = fixturePath, extraEnv = {}) {
+function runMigration(
+  name,
+  scenario,
+  extraArgs = [],
+  input = fixturePath,
+  extraEnv = {},
+  force = true,
+) {
   const workDirectory = path.join(runtimeRoot, name);
   rmSync(workDirectory, { recursive: true, force: true });
   mkdirSync(workDirectory, { recursive: true });
@@ -63,7 +70,7 @@ function runMigration(name, scenario, extraArgs = [], input = fixturePath, extra
       outputPath,
       "--dws-path",
       fakeDwsPath,
-      "--force",
+      ...(force ? ["--force"] : []),
       ...extraArgs,
     ],
     {
@@ -198,7 +205,8 @@ test("回读未知状态只恢复验证，不重复导入", () => {
   assert.equal(first.data.error.code, "READBACK_MISMATCH");
   assert.equal(first.calls.filter((call) => call.args.includes("+import")).length, 1);
 
-  const resumed = runMigration("resume-readback", "success");
+  // 默认重试应恢复回读；显式 --force 的产品语义是允许用户再次导出。
+  const resumed = runMigration("resume-readback", "success", [], fixturePath, {}, false);
   assert.equal(resumed.status, 0, resumed.stderr);
   assert.equal(resumed.data.success, true);
   assert.equal(resumed.data.checks.resumedReadback, true);
