@@ -8,19 +8,141 @@
   </head>
   <body>
     <main>
-      <header>
-        <p class="eyebrow">NOTION → DINGTALK</p>
-        <h1>Notion2DingDing</h1>
-        <p class="description">将当前 Notion 页面迁移成可编辑的钉钉文档。</p>
+      <header class="app-header">
+        <img class="app-icon" src="icons/icon-48.png" width="36" height="36" alt="" />
+        <div class="brand-copy">
+          <h1>Notion2DingDing</h1>
+          <p>Notion <span aria-hidden="true">→</span> DingTalk</p>
+        </div>
+        <button id="check-host" class="icon-button" type="button" aria-label="重新检查环境" title="重新检查环境">↻</button>
       </header>
 
-      <section class="status-card" aria-live="polite">
-        <span class="status-dot" aria-hidden="true"></span>
-        <div id="status" data-kind="idle">正在检查本地助手…</div>
+      <section class="overview" aria-label="迁移前检查">
+        <div class="status-row" aria-live="polite">
+          <span class="status-dot" aria-hidden="true"></span>
+          <div>
+            <strong>本地核心</strong>
+            <p id="host-status" data-kind="idle">正在检查…</p>
+          </div>
+        </div>
+        <div class="status-row" aria-live="polite">
+          <span class="status-dot" aria-hidden="true"></span>
+          <div>
+            <strong>当前页面</strong>
+            <p id="page-status" data-kind="idle">正在识别…</p>
+          </div>
+        </div>
       </section>
 
-      <button id="check-host" type="button">重新检查</button>
-      <p class="footnote">真实页面迁移将在下一阶段接入。</p>
+      <section id="local-setup" class="local-setup" aria-live="polite" hidden>
+        <span id="local-setup-kicker" class="setup-kicker">首次设置</span>
+        <strong id="local-setup-title">安装 Windows 本地助手</strong>
+        <p id="local-setup-message">扩展负责操作入口，文档转换和钉钉写入在你的电脑本地完成。</p>
+        <div class="setup-actions">
+          <a id="local-setup-download" class="setup-download" target="_blank" rel="noreferrer">下载本地助手</a>
+          <a id="local-setup-release" class="setup-release" target="_blank" rel="noreferrer">查看版本说明</a>
+        </div>
+        <p class="setup-hint">v0.1.0 安装包暂未签名；Windows 若拦截，请先核对 GitHub Release 中的 SHA-256，再选择“更多信息 → 仍要运行”。运行安装包后回到这里，点击右上角 ↻ 重新检查。</p>
+      </section>
+
+      <section id="settings-panel" class="settings-list" aria-label="钉钉设置">
+        <div class="setting-row">
+          <span class="setting-label">钉钉账号</span>
+          <strong id="auth-status">正在检查…</strong>
+          <button id="login-dingtalk" class="text-button" type="button" disabled>更改</button>
+        </div>
+        <div class="setting-row">
+          <span class="setting-label">保存位置</span>
+          <strong id="target-status">正在检查…</strong>
+          <button id="select-target" class="text-button" type="button" disabled>更改</button>
+        </div>
+        <p id="settings-action-status" class="inline-notice" aria-live="polite" hidden></p>
+      </section>
+
+      <section id="migration-panel" class="migration-form" aria-labelledby="migration-heading">
+        <div class="form-heading">
+          <h2 id="migration-heading">迁移设置</h2>
+          <span>官方 HTML ZIP</span>
+        </div>
+
+        <div class="field export-field">
+          <span>导出包 <small>选择后只预检</small></span>
+          <button id="select-export" class="secondary-button export-select-button" type="button" disabled>
+            选择 HTML 导出 ZIP
+          </button>
+        </div>
+        <div id="export-summary" class="export-summary" aria-live="polite" hidden>
+          <strong id="export-summary-title">尚未选择导出包</strong>
+          <p id="export-summary-meta"></p>
+        </div>
+        <div id="previous-export" class="previous-export" aria-live="polite" hidden>
+          <strong id="previous-export-title">此前已导出</strong>
+          <p id="previous-export-meta"></p>
+          <a id="previous-export-link" target="_blank" rel="noreferrer">打开此前的钉钉文档 ↗</a>
+        </div>
+
+        <label class="field" for="document-title">
+          <span>文档标题 <small>从导出包识别，可修改</small></span>
+          <input id="document-title" maxlength="200" placeholder="请先选择导出包" disabled />
+        </label>
+
+        <div class="field subpage-field">
+          <span id="subpage-mode-label">子页面</span>
+          <div class="subpage-options" role="radiogroup" aria-labelledby="subpage-mode-label">
+            <label class="radio-option" title="把子页面内容合并到同一个钉钉文档">
+              <input id="subpage-mode-inline" class="subpage-mode-input" type="radio" name="subpage-mode" value="inline" checked />
+              <span>同页展开</span>
+            </label>
+            <label class="radio-option" title="每个子页面创建独立钉钉文档">
+              <input id="subpage-mode-tree" class="subpage-mode-input" type="radio" name="subpage-mode" value="tree" />
+              <span>递归文档树</span>
+            </label>
+          </div>
+        </div>
+
+        <input id="export-file" type="file" accept=".zip,application/zip" hidden />
+        <button id="migrate-export" class="primary-button" type="button" disabled>
+          开始转换
+        </button>
+      </section>
+
+      <section id="task-panel" class="task-panel" aria-live="polite" hidden>
+        <div class="task-heading">
+          <div>
+            <span id="task-status-badge" class="task-badge">准备中</span>
+            <h2 id="task-stage">正在启动迁移</h2>
+          </div>
+          <span id="task-percent" class="task-percent">0%</span>
+        </div>
+        <div class="progress-track" role="progressbar" aria-label="迁移进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+          <span id="progress-bar"></span>
+        </div>
+        <p id="task-message">正在将导出包安全传给本地核心…</p>
+        <button id="cancel-task" class="secondary-button danger" type="button">取消迁移</button>
+      </section>
+
+      <section id="recovery-panel" class="recovery-panel" aria-live="polite" hidden>
+        <div>
+          <strong id="recovery-title">迁移未完成</strong>
+          <p id="recovery-message"></p>
+        </div>
+        <button id="recovery-action" class="secondary-button" type="button">重试</button>
+      </section>
+
+      <section id="result-panel" class="result-panel" aria-live="polite" hidden>
+        <span class="result-mark" aria-hidden="true">✓</span>
+        <div>
+          <strong id="result-title">迁移完成</strong>
+          <p id="result-summary"></p>
+          <a id="result-link" target="_blank" rel="noreferrer">打开钉钉文档 ↗</a>
+        </div>
+      </section>
+
+      <details class="export-help">
+        <summary>如何导出 HTML ZIP？</summary>
+        <p>Notion 页面右上角「••• → 导出 → HTML」；需要子页面时打开“包含子页面”。</p>
+      </details>
+      <p class="brand-note">独立迁移工具，与 Notion、钉钉官方无隶属或背书关系。</p>
     </main>
     <script type="module" src="popup.js"></script>
   </body>

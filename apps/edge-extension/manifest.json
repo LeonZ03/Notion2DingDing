@@ -1,11 +1,17 @@
 {
   "manifest_version": 3,
-  "name": "Notion2DingDing",
-  "description": "将 Notion 页面迁移为可编辑的钉钉富文本文档。",
+  "name": "__MSG_extensionName__",
+  "description": "__MSG_extensionDescription__",
+  "default_locale": "zh_CN",
   "version": "0.1.0",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwcBGaCiZwmm1BZyWhUgyJ5vwlNPA/uR6BIF+PUr5tYd1r+eHvMF1OvUq1xKt4o6Lh2yToubwOZUIXTiYU4gTU/qITmRr+8XAu0TQp+9QqDbfHosmENtx4Xa5xAQFCA3p+bszC044Uzx4BhQd+FjTbN530cuwV6uVz5THKeR3TD9YcjXnWg2g6W9ZRqH5k9wNQgmXoyKLb2lj3nBCatHNij3CJgaMBdWBUk+AWHt9p6E6fzWWrk+pphIUcVuys0X3CsPj1eLsslhdQtGR/QCVIXcs53u2eKqDQjlYGCIQOfmmkWpEJ8LJr+lrKJlwM9xE5dW4uMsAYE4WF/TS2geW7QIDAQAB",
   "action": {
     "default_title": "Notion2DingDing",
-    "default_popup": "popup.html"
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png"
+    }
   },
   "background": {
     "service_worker": "background.js",
@@ -14,6 +20,13 @@
   "permissions": [
     "activeTab",
     "nativeMessaging",
+    "scripting",
     "storage"
-  ]
+  ],
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  }
 }

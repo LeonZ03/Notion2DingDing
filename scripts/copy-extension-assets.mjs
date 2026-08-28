@@ -1,4 +1,4 @@
-import { cp, copyFile, mkdir } from "node:fs/promises";
+import { cp, copyFile, mkdir, rm } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
@@ -16,5 +16,6 @@ await cp(path.join(extensionRoot, "public"), outputDirectory, {
   recursive: true,
   force: true,
 });
+await rm(path.join(outputDirectory, "icons", "icon-master-v2.png"), { force: true });
 
 process.stdout.write(`Edge extension built at ${outputDirectory}\n`);

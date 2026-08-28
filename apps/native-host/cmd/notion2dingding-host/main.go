@@ -9,14 +9,22 @@ import (
 	"os"
 
 	"github.com/LeonZ03/Notion2DingDing/apps/native-host/internal/handler"
+	"github.com/LeonZ03/Notion2DingDing/apps/native-host/internal/localtool"
 	"github.com/LeonZ03/Notion2DingDing/apps/native-host/internal/protocol"
 )
 
-const maxMessageBytes = 4 * 1024 * 1024
+const maxMessageBytes = 96 * 1024 * 1024
+
+type requestHandler interface {
+	Handle(protocol.Request) protocol.Response
+}
 
 func main() {
+	service := localtool.New()
+	defer service.Shutdown()
+	messageHandler := handler.New(service)
 	for {
-		if err := processMessage(os.Stdin, os.Stdout); err != nil {
+		if err := processMessage(os.Stdin, os.Stdout, messageHandler); err != nil {
 			if errors.Is(err, io.EOF) {
 				return
 			}
@@ -27,7 +35,7 @@ func main() {
 	}
 }
 
-func processMessage(input io.Reader, output io.Writer) error {
+func processMessage(input io.Reader, output io.Writer, messageHandler requestHandler) error {
 	var messageLength uint32
 	if err := binary.Read(input, binary.LittleEndian, &messageLength); err != nil {
 		return err
@@ -47,7 +55,7 @@ func processMessage(input io.Reader, output io.Writer) error {
 		return writeResponse(output, protocol.Failure("", "invalid_json", "请求不是有效 JSON。"))
 	}
 
-	return writeResponse(output, handler.Handle(request))
+	return writeResponse(output, messageHandler.Handle(request))
 }
 
 func writeResponse(output io.Writer, response protocol.Response) error {

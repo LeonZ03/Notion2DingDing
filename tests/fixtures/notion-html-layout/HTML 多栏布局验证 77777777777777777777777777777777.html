@@ -1,0 +1,40 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>HTML 多栏布局验证</title>
+</head>
+<body>
+  <article class="page sans">
+    <header><h1 class="page-title">HTML 多栏布局验证</h1></header>
+    <p>LAYOUT-START：下面第一行必须保持三张图片并排。</p>
+    <div class="column-list" notion-column-list>
+      <div class="column" style="width:33.33333333333333%" notion-column-ratio="0.3333333333333333">
+        <figure class="image"><img src="红色%20示意图.png" style="width:320px" alt="左侧红色图片"></figure>
+      </div>
+      <div class="column" style="width:33.33333333333333%" notion-column-ratio="0.3333333333333333">
+        <figure class="image"><img src="蓝色%20示意图.png" style="width:320px" alt="中间蓝色图片"></figure>
+      </div>
+      <div class="column" style="width:33.33333333333333%" notion-column-ratio="0.3333333333333333">
+        <figure class="image"><img src="红色%20示意图.png" style="width:320px" alt="右侧红色图片"></figure>
+      </div>
+    </div>
+    <p>MIXED-ROW：下面第二行必须保持左图、右表，并保留 40% / 60% 列宽。</p>
+    <div class="column-list" notion-column-list>
+      <div class="column" style="width:40%" notion-column-ratio="0.4">
+        <figure class="image"><img src="蓝色%20示意图.png" style="width:360px" alt="混排图片"></figure>
+      </div>
+      <div class="column" style="width:60%" notion-column-ratio="0.6">
+        <table class="simple-table">
+          <thead><tr><th>项目</th><th>验收值</th></tr></thead>
+          <tbody>
+            <tr><td>布局</td><td>图片与表格同一行</td></tr>
+            <tr><td>列宽</td><td>40% / 60%</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <p>LAYOUT-FINAL：HTML 多栏夹具结束。</p>
+  </article>
+</body>
+</html>

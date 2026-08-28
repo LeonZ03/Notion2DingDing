@@ -6,6 +6,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
 $ownershipId = 'com.leonz03.notion2dingding.cli'
 $programDirectory = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $manifestPath = Join-Path $programDirectory '.n2dd-install.json'
@@ -20,15 +21,17 @@ function Write-Help {
 Notion2DingDing 本地命令
 
 用法：
-  n2dd config --folder <nodeId> [--profile <名称>]
+  n2dd config --folder <nodeId> [--folder-name <界面显示路径>] [--profile <名称>]
   n2dd config --workspace <workspaceId> [--profile <名称>]
   n2dd config --show | --clear
   n2dd doctor
-  n2dd migrate --input <Notion ZIP或目录> [迁移选项]
+  n2dd inspect --input <Notion HTML ZIP或目录>
+  n2dd migrate --input <Notion ZIP或目录> [--subpages inline|tree] [迁移选项]
   n2dd --input <Notion ZIP或目录> [迁移选项]
   n2dd version
 
 保存默认目标后，日常迁移无需重复填写 --folder 或 --workspace。
+子页面默认使用 inline，在同一钉钉文档内展开；tree 会递归创建同名文件夹和独立文档。
 '@ | Write-Output
 }
 
@@ -85,11 +88,13 @@ if ($command -eq 'config') {
             Write-Result -Value ([ordered]@{ success = $true; configured = $false })
             exit 0
         }
-        $current = Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json
+        $current = Get-Content -LiteralPath $configPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        $folderNameProperty = $current.PSObject.Properties['folderName']
         Write-Result -Value ([ordered]@{
             success = $true
             configured = $true
             folder = [string]$current.folder
+            folderName = if ($folderNameProperty) { [string]$folderNameProperty.Value } else { '' }
             workspace = [string]$current.workspace
             profile = [string]$current.profile
         })
@@ -107,10 +112,11 @@ if ($command -eq 'config') {
 
     $folder = ''
     $workspace = ''
+    $folderName = ''
     $profile = ''
     for ($index = 0; $index -lt $configArguments.Count; $index += 1) {
         $argument = $configArguments[$index]
-        if ($argument -notin @('--folder', '--workspace', '--profile')) {
+        if ($argument -notin @('--folder', '--folder-name', '--workspace', '--profile')) {
             throw "未知配置参数：$argument"
         }
         if ($index + 1 -ge $configArguments.Count) {
@@ -121,6 +127,7 @@ if ($command -eq 'config') {
             throw "配置参数缺少值：$argument"
         }
         if ($argument -eq '--folder') { $folder = $value }
+        if ($argument -eq '--folder-name') { $folderName = $value }
         if ($argument -eq '--workspace') { $workspace = $value }
         if ($argument -eq '--profile') { $profile = $value }
         $index += 1
@@ -129,12 +136,16 @@ if ($command -eq 'config') {
     if ((-not [string]::IsNullOrWhiteSpace($folder)) -eq (-not [string]::IsNullOrWhiteSpace($workspace))) {
         throw '配置必须且只能提供 --folder 或 --workspace 其中一个。'
     }
+    if (-not [string]::IsNullOrWhiteSpace($folderName) -and [string]::IsNullOrWhiteSpace($folder)) {
+        throw '--folder-name 只能与 --folder 一起使用。'
+    }
 
     [IO.Directory]::CreateDirectory($dataDirectory) | Out-Null
     $temporaryConfig = "$configPath.$PID.tmp"
     $config = [ordered]@{
-        version = 1
+        version = 2
         folder = $folder
+        folderName = $folderName
         workspace = $workspace
         profile = $profile
         updatedAt = [DateTime]::UtcNow.ToString('o')
@@ -155,10 +166,25 @@ if ($command -eq 'config') {
         success = $true
         configured = $true
         folder = $folder
+        folderName = $folderName
         workspace = $workspace
         profile = $profile
     })
     exit 0
+}
+
+if ($command -eq 'inspect') {
+    $inspectArguments = if ($CliArguments.Count -gt 1) { @($CliArguments[1..($CliArguments.Count - 1)]) } else { @() }
+    if ($inspectArguments.Count -ne 2 -or $inspectArguments[0] -ne '--input' -or [string]::IsNullOrWhiteSpace($inspectArguments[1])) {
+        throw 'inspect 只接受 --input <Notion HTML ZIP或目录>。'
+    }
+    $converter = Join-Path $programDirectory 'runtime\scripts\convert-notion-export.ps1'
+    if (-not (Test-Path -LiteralPath $converter -PathType Leaf)) {
+        throw "导出包检查器不存在：$converter。请重新安装或升级。"
+    }
+    $powershellPath = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+    & $powershellPath -NoProfile -ExecutionPolicy Bypass -File $converter -InputPath $inspectArguments[1] -ManifestOnly
+    exit $LASTEXITCODE
 }
 
 $migrationArguments = @($CliArguments)
@@ -181,7 +207,7 @@ if (-not $hasFolder -and -not $hasWorkspace) {
     if (-not (Test-Path -LiteralPath $configPath -PathType Leaf)) {
         throw '尚未配置默认钉钉目标。请先运行 n2dd config --folder <nodeId>，或在迁移命令中显式提供目标。'
     }
-    $config = Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json
+    $config = Get-Content -LiteralPath $configPath -Raw -Encoding UTF8 | ConvertFrom-Json
     $configuredFolder = [string]$config.folder
     $configuredWorkspace = [string]$config.workspace
     if ((-not [string]::IsNullOrWhiteSpace($configuredFolder)) -eq (-not [string]::IsNullOrWhiteSpace($configuredWorkspace))) {

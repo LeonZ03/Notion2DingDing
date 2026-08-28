@@ -1,0 +1,10 @@
+{
+  "extensionName": {
+    "message": "Notion2DingDing",
+    "description": "扩展在 Edge 和 Microsoft Edge Add-ons 中显示的名称。"
+  },
+  "extensionDescription": {
+    "message": "将 Notion 页面迁移为可编辑的钉钉富文本文档。",
+    "description": "扩展在 Edge 和 Microsoft Edge Add-ons 中显示的简短说明。"
+  }
+}

@@ -9,6 +9,8 @@ param(
 
     [string]$LauncherDirectory,
 
+    [string]$StartMenuDirectory,
+
     [switch]$SkipDependencyCheck
 )
 
@@ -17,6 +19,8 @@ $ErrorActionPreference = 'Stop'
 $ownershipId = 'com.leonz03.notion2dingding.cli'
 $repositoryRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $localAppData = [IO.Path]::GetFullPath($env:LOCALAPPDATA)
+$powershellPath = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+$wscriptPath = Join-Path $env:SystemRoot 'System32\wscript.exe'
 
 if ([string]::IsNullOrWhiteSpace($InstallDirectory)) {
     $InstallDirectory = Join-Path $localAppData 'Programs\Notion2DingDing'
@@ -27,13 +31,20 @@ if ([string]::IsNullOrWhiteSpace($DataDirectory)) {
 if ([string]::IsNullOrWhiteSpace($LauncherDirectory)) {
     $LauncherDirectory = Join-Path $localAppData 'Microsoft\WindowsApps'
 }
+if ([string]::IsNullOrWhiteSpace($StartMenuDirectory)) {
+    $StartMenuDirectory = Join-Path ([IO.Path]::GetFullPath($env:APPDATA)) 'Microsoft\Windows\Start Menu\Programs'
+}
 
 $InstallDirectory = [IO.Path]::GetFullPath($InstallDirectory).TrimEnd('\')
 $DataDirectory = [IO.Path]::GetFullPath($DataDirectory).TrimEnd('\')
 $LauncherDirectory = [IO.Path]::GetFullPath($LauncherDirectory).TrimEnd('\')
+$StartMenuDirectory = [IO.Path]::GetFullPath($StartMenuDirectory).TrimEnd('\')
 $installMarkerPath = Join-Path $InstallDirectory '.n2dd-install.json'
 $dataMarkerPath = Join-Path $DataDirectory '.n2dd-data.json'
 $launcherPath = Join-Path $LauncherDirectory 'n2dd.cmd'
+$shortcutDirectory = Join-Path $StartMenuDirectory 'Notion2DingDing'
+$shortcutMarkerPath = Join-Path $shortcutDirectory '.n2dd-shortcut.json'
+$shortcutPath = Join-Path $shortcutDirectory 'Notion2DingDing.lnk'
 
 function Assert-NonBroadPath {
     param(
@@ -152,6 +163,7 @@ function Remove-GeneratedDirectory {
 Assert-NonBroadPath -Path $InstallDirectory -Label '程序目录'
 Assert-NonBroadPath -Path $DataDirectory -Label '数据目录'
 Assert-NonBroadPath -Path $LauncherDirectory -Label '命令目录'
+Assert-NonBroadPath -Path $shortcutDirectory -Label '开始菜单快捷方式目录'
 
 try {
     if ($Action -eq 'Uninstall') {
@@ -166,11 +178,15 @@ try {
         if (Test-Path -LiteralPath $DataDirectory) {
             [void](Read-OwnershipMarker -MarkerPath $dataMarkerPath -Label '数据目录')
         }
+        if (Test-Path -LiteralPath $shortcutDirectory) {
+            [void](Read-OwnershipMarker -MarkerPath $shortcutMarkerPath -Label '开始菜单快捷方式目录')
+        }
 
         Remove-Item -LiteralPath $launcherPath -Force -ErrorAction SilentlyContinue
         if (Test-Path -LiteralPath $launcherPath) {
             throw "启动器未能永久删除：$launcherPath"
         }
+        Remove-OwnedDirectory -Directory $shortcutDirectory -MarkerPath $shortcutMarkerPath -Label '开始菜单快捷方式目录'
         Remove-OwnedDirectory -Directory $InstallDirectory -MarkerPath $installMarkerPath -Label '程序目录'
         Remove-OwnedDirectory -Directory $DataDirectory -MarkerPath $dataMarkerPath -Label '数据目录'
 
@@ -180,6 +196,7 @@ try {
             installDirectoryRemoved = -not (Test-Path -LiteralPath $InstallDirectory)
             dataDirectoryRemoved = -not (Test-Path -LiteralPath $DataDirectory)
             launcherRemoved = -not (Test-Path -LiteralPath $launcherPath)
+            shortcutRemoved = -not (Test-Path -LiteralPath $shortcutDirectory)
         } | ConvertTo-Json -Depth 5
         exit 0
     }
@@ -208,9 +225,13 @@ try {
     if ((Test-Path -LiteralPath $launcherPath) -and -not (Test-ManagedLauncher)) {
         throw "命令目录已存在非本项目管理的 n2dd.cmd，拒绝覆盖：$launcherPath"
     }
+    if (Test-Path -LiteralPath $shortcutDirectory) {
+        [void](Read-OwnershipMarker -MarkerPath $shortcutMarkerPath -Label '开始菜单快捷方式目录')
+    }
 
     $dataDirectoryExisted = Test-Path -LiteralPath $DataDirectory
     $dataMarkerExisted = Test-Path -LiteralPath $dataMarkerPath -PathType Leaf
+    $shortcutDirectoryExisted = Test-Path -LiteralPath $shortcutDirectory
     if ($dataDirectoryExisted -and -not (Test-Path -LiteralPath $dataMarkerPath -PathType Leaf)) {
         $allowedNames = @('state', 'config.json')
         $unexpected = @(
@@ -230,6 +251,7 @@ try {
     $backupDirectory = "$InstallDirectory.backup-$nonce"
     $generatedPrefix = "$InstallDirectory."
     $launcherTemporary = Join-Path $LauncherDirectory "n2dd.cmd.$nonce.tmp"
+    $shortcutTemporary = Join-Path $shortcutDirectory "Notion2DingDing.$nonce.tmp.lnk"
     $programMoved = $false
     $backupCreated = $false
     try {
@@ -239,9 +261,13 @@ try {
         $payload = @(
             @{ Source = 'scripts\migrate-notion-to-dingtalk.mjs'; Destination = 'runtime\scripts\migrate-notion-to-dingtalk.mjs' },
             @{ Source = 'scripts\convert-notion-export.ps1'; Destination = 'runtime\scripts\convert-notion-export.ps1' },
+            @{ Source = 'scripts\notion-html-columns.lua'; Destination = 'runtime\scripts\notion-html-columns.lua' },
+            @{ Source = 'scripts\normalize-notion-docx-layout.ps1'; Destination = 'runtime\scripts\normalize-notion-docx-layout.ps1' },
             @{ Source = 'scripts\test-docx-assets.ps1'; Destination = 'runtime\scripts\test-docx-assets.ps1' },
             @{ Source = 'scripts\notion2dingding.ps1'; Destination = 'cli\notion2dingding.ps1' },
-            @{ Source = 'scripts\diagnose-local-tool.ps1'; Destination = 'cli\diagnose-local-tool.ps1' }
+            @{ Source = 'scripts\diagnose-local-tool.ps1'; Destination = 'cli\diagnose-local-tool.ps1' },
+            @{ Source = 'scripts\notion2dingding-gui.ps1'; Destination = 'cli\notion2dingding-gui.ps1' },
+            @{ Source = 'scripts\launch-notion2dingding-gui.vbs'; Destination = 'cli\launch-notion2dingding-gui.vbs' }
         )
         $installedFiles = @()
         foreach ($item in $payload) {
@@ -270,6 +296,7 @@ try {
             updatedAt = [DateTime]::UtcNow.ToString('o')
             dataDirectory = $DataDirectory
             launcherPath = $launcherPath
+            shortcutPath = $shortcutPath
             files = $installedFiles
         }
         Write-Utf8Json -Path (Join-Path $stagingDirectory '.n2dd-install.json') -Value $programMarker
@@ -308,6 +335,42 @@ try {
         [IO.File]::WriteAllText($launcherTemporary, $launcherContent, [Text.ASCIIEncoding]::new())
         Move-Item -LiteralPath $launcherTemporary -Destination $launcherPath -Force
 
+        [IO.Directory]::CreateDirectory($shortcutDirectory) | Out-Null
+        $shortcutCreatedAt = [DateTime]::UtcNow.ToString('o')
+        if (Test-Path -LiteralPath $shortcutMarkerPath -PathType Leaf) {
+            $existingShortcutMarker = Get-Content -LiteralPath $shortcutMarkerPath -Raw | ConvertFrom-Json
+            if (-not [string]::IsNullOrWhiteSpace([string]$existingShortcutMarker.createdAt)) {
+                $shortcutCreatedAt = [string]$existingShortcutMarker.createdAt
+            }
+        }
+        Write-Utf8Json -Path $shortcutMarkerPath -Value ([ordered]@{
+            ownershipId = $ownershipId
+            markerVersion = 1
+            createdAt = $shortcutCreatedAt
+            updatedAt = [DateTime]::UtcNow.ToString('o')
+            shortcutPath = $shortcutPath
+        })
+        $guiLauncher = Join-Path $InstallDirectory 'cli\launch-notion2dingding-gui.vbs'
+        $shell = $null
+        $shortcut = $null
+        $shell = New-Object -ComObject WScript.Shell
+        try {
+            $shortcut = $shell.CreateShortcut($shortcutTemporary)
+            $shortcut.TargetPath = $wscriptPath
+            $shortcut.Arguments = '"' + $guiLauncher + '"'
+            $shortcut.WorkingDirectory = $DataDirectory
+            $shortcut.Description = '把 Notion 导出包转换为钉钉文档'
+            $shortcut.Save()
+        }
+        finally {
+            if ($shortcut) { [Runtime.InteropServices.Marshal]::FinalReleaseComObject($shortcut) | Out-Null }
+            if ($shell) { [Runtime.InteropServices.Marshal]::FinalReleaseComObject($shell) | Out-Null }
+        }
+        Move-Item -LiteralPath $shortcutTemporary -Destination $shortcutPath -Force
+        if (-not (Test-Path -LiteralPath $shortcutPath -PathType Leaf)) {
+            throw "开始菜单快捷方式未能创建：$shortcutPath"
+        }
+
         $diagnostics = $null
         if (-not $SkipDependencyCheck) {
             try {
@@ -339,9 +402,10 @@ try {
             installDirectory = $InstallDirectory
             dataDirectory = $DataDirectory
             launcherPath = $launcherPath
+            shortcutPath = $shortcutPath
             ready = if ($null -eq $diagnostics) { $null } else { [bool]$diagnostics.ready }
             diagnostics = $diagnostics
-            next = if ($null -eq $diagnostics -or -not $diagnostics.ready) { '运行 n2dd doctor 并按 fixes 完成依赖或登录。' } else { '运行 n2dd config --folder <nodeId> 保存默认目标。' }
+            next = '从 Windows 开始菜单打开 Notion2DingDing，在同一个界面完成检查、配置和转换。'
         } | ConvertTo-Json -Depth 8
     }
     catch {
@@ -361,10 +425,14 @@ try {
         elseif (-not $dataMarkerExisted -and (Test-Path -LiteralPath $dataMarkerPath)) {
             Remove-Item -LiteralPath $dataMarkerPath -Force -ErrorAction SilentlyContinue
         }
+        if (-not $shortcutDirectoryExisted -and (Test-Path -LiteralPath $shortcutDirectory)) {
+            Remove-OwnedDirectory -Directory $shortcutDirectory -MarkerPath $shortcutMarkerPath -Label '未完成安装快捷方式目录'
+        }
         throw
     }
     finally {
         Remove-Item -LiteralPath $launcherTemporary -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $shortcutTemporary -Force -ErrorAction SilentlyContinue
         Remove-GeneratedDirectory -Directory $stagingDirectory -ExpectedPrefix $generatedPrefix
     }
 }

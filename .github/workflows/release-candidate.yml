@@ -1,0 +1,60 @@
+name: Release candidate
+
+on:
+  workflow_dispatch:
+    inputs:
+      published_extension_id:
+        description: Microsoft Edge Add-ons assigned extension ID (32 chars a-p)
+        required: false
+        type: string
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: apps/native-host/go.mod
+          cache: false
+
+      - name: Install JavaScript dependencies
+        run: npm ci
+
+      - name: Install Pandoc
+        run: choco install pandoc --yes --no-progress
+
+      - name: Run release checks
+        run: npm run check:all
+
+      - name: Build release candidate
+        shell: powershell
+        run: >-
+          powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-release.ps1
+          -PublishedExtensionId "${{ inputs.published_extension_id }}"
+
+      - name: Verify release package and installer
+        run: npm run test:stage7
+
+      - name: Upload candidate artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: Notion2DingDing-release-candidate
+          path: dist/release/
+          if-no-files-found: error

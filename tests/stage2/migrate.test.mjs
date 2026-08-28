@@ -20,6 +20,7 @@ const repoRoot = path.resolve(testDirectory, "..", "..");
 const cliPath = path.join(repoRoot, "scripts", "migrate-notion-to-dingtalk.mjs");
 const fakeDwsPath = path.join(testDirectory, "fake-dws.mjs");
 const fixturePath = path.join(repoRoot, "tests", "fixtures", "notion-export");
+const coverFixturePath = path.join(repoRoot, "tests", "fixtures", "notion-cover");
 const runtimeRoot = path.join(repoRoot, "artifacts", "stage2-tests");
 const stateRoot = path.join(runtimeRoot, "state");
 const temporaryRoot = path.join(runtimeRoot, "tool-temp");
@@ -41,12 +42,13 @@ function readCalls(logPath) {
     .map((line) => JSON.parse(line));
 }
 
-function runMigration(name, scenario, extraArgs = [], input = fixturePath) {
+function runMigration(name, scenario, extraArgs = [], input = fixturePath, extraEnv = {}) {
   const workDirectory = path.join(runtimeRoot, name);
   rmSync(workDirectory, { recursive: true, force: true });
   mkdirSync(workDirectory, { recursive: true });
   const logPath = path.join(workDirectory, "dws-calls.jsonl");
   const outputPath = path.join(workDirectory, "output.docx");
+  const documentTitle = `阶段 2 自动验收-${name}-${runNonce}`;
   const result = spawnSync(
     process.execPath,
     [
@@ -56,7 +58,7 @@ function runMigration(name, scenario, extraArgs = [], input = fixturePath) {
       "--folder",
       "fake-folder-node",
       "--name",
-      `阶段 2 自动验收-${name}-${runNonce}`,
+      documentTitle,
       "--output",
       outputPath,
       "--dws-path",
@@ -71,8 +73,10 @@ function runMigration(name, scenario, extraArgs = [], input = fixturePath) {
         ...process.env,
         N2DD_FAKE_SCENARIO: scenario,
         N2DD_FAKE_LOG: logPath,
+        N2DD_FAKE_EXPECTED_NAME: documentTitle,
         N2DD_STATE_DIRECTORY: stateRoot,
         N2DD_TEMP_DIRECTORY: temporaryRoot,
+        ...extraEnv,
       },
       maxBuffer: 32 * 1024 * 1024,
       windowsHide: true,
@@ -110,6 +114,7 @@ function assertMinimalState(result) {
 test.before(() => {
   assert.equal(process.platform, "win32", "阶段 2 MVP 自动化验收必须在 Windows 上运行");
   assert.ok(existsSync(fixturePath), "阶段 1 Notion 夹具必须存在");
+  assert.ok(existsSync(coverFixturePath), "Notion 封面夹具必须存在");
   mkdirSync(runtimeRoot, { recursive: true });
 });
 
@@ -121,11 +126,84 @@ test("一条命令完成转换、导入和真实 URL 回读", () => {
   assert.equal(result.data.remote.documentUrl, "https://alidocs.dingtalk.com/i/nodes/fake-stage2-node");
   assert.equal(result.data.checks.expectedImageCount, 2);
   assert.equal(result.data.checks.readbackImageCount, 2);
+  assert.equal(result.data.checks.expectedCodeBlockCount, 1);
+  assert.equal(result.data.checks.nativeCodeBlockCount, 1);
+  assert.equal(result.data.checks.codeBlocksMatch, true);
   assert.equal(result.data.local.docx.permanentlyDeleted, true);
   assert.equal(result.data.cleanup.verified, true);
   assert.equal(result.calls.filter((call) => call.args.includes("+import")).length, 1);
   assert.equal(result.calls.filter((call) => call.args.includes("+fetch")).length, 1);
+  const codeUpdates = result.calls.filter((call) => {
+    const elementIndex = call.args.indexOf("--element");
+    if (elementIndex < 0) {
+      return false;
+    }
+    return JSON.parse(call.args[elementIndex + 1])?.[0] === "code";
+  });
+  assert.equal(codeUpdates.length, 1);
+  const codeElementIndex = codeUpdates[0].args.indexOf("--element");
+  const codeElement = JSON.parse(codeUpdates[0].args[codeElementIndex + 1]);
+  assert.equal(codeElement[1].syntax, "powershell");
+  assert.equal(codeElement[1].code, 'Write-Output "Notion2DingDing 阶段 1"');
   assertMinimalState(result);
+});
+
+test("回读忽略内联 SVG，并接受钉钉同名冲突后缀", () => {
+  const result = runMigration("decorated-readback", "decorated-readback");
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.data.success, true);
+  assert.equal(result.data.checks.titleMatches, false);
+  assert.equal(result.data.checks.titleAccepted, true);
+  assert.equal(result.data.checks.titleAdjusted, true);
+  assert.equal(result.data.checks.titleCollisionIndex, 1);
+  assert.equal(result.data.checks.expectedImageCount, 2);
+  assert.equal(result.data.checks.readbackImageCount, 2);
+  assert.equal(result.data.checks.totalImageMarkerCount, 5);
+  assert.equal(result.data.checks.ignoredInlineImageCount, 3);
+  assert.equal(result.data.checks.imagesMatch, true);
+});
+
+test("Notion 根页面封面恢复为钉钉原生封面且不重复进入正文", () => {
+  const result = runMigration(
+    "native-cover",
+    "cover-update-unknown",
+    [],
+    coverFixturePath,
+    { N2DD_FAKE_IMAGE_COUNT: "0" },
+  );
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.data.success, true);
+  assert.equal(result.data.checks.expectedImageCount, 0);
+  assert.equal(result.data.checks.readbackImageCount, 0);
+  assert.equal(result.data.checks.expectedCoverCount, 1);
+  assert.equal(result.data.checks.nativeCoverCount, 1);
+  assert.equal(result.data.checks.coverMatches, true);
+  assert.equal(result.data.local.imageAudit.sourceReferenceCount, 0);
+  assert.equal(result.data.local.mappings.cover.status, "preserved");
+  assert.equal(result.data.local.mappings.cover.nativeRestore.updatedCount, 1);
+  assert.equal(result.data.local.mappings.cover.nativeRestore.writeAcknowledged, false);
+  const coverUpdates = result.calls.filter((call) => call.args.includes("+resource-update"));
+  const styleReads = result.calls.filter((call) => call.args.includes("+inspect"));
+  assert.equal(coverUpdates.length, 1);
+  assert.equal(coverUpdates[0].args.includes("--yes"), true);
+  assert.equal(styleReads.length, 2);
+  assertMinimalState(result);
+});
+
+test("回读未知状态只恢复验证，不重复导入", () => {
+  const first = runMigration("resume-readback", "readback-mismatch");
+  assert.notEqual(first.status, 0);
+  assert.equal(first.data.status, "unknown");
+  assert.equal(first.data.stage, "readback");
+  assert.equal(first.data.error.code, "READBACK_MISMATCH");
+  assert.equal(first.calls.filter((call) => call.args.includes("+import")).length, 1);
+
+  const resumed = runMigration("resume-readback", "success");
+  assert.equal(resumed.status, 0, resumed.stderr);
+  assert.equal(resumed.data.success, true);
+  assert.equal(resumed.data.checks.resumedReadback, true);
+  assert.equal(resumed.calls.some((call) => call.args.includes("+import")), false);
+  assert.equal(resumed.calls.filter((call) => call.args.includes("+fetch")).length, 1);
 });
 
 test("损坏 ZIP 在写入钉钉前失败", () => {
@@ -172,7 +250,42 @@ test("目标无权限时返回明确错误且不误报成功", () => {
   assert.equal(existsSync(result.data.stateRecord), false, "权限失败不应留下任务状态");
 });
 
-test("写入状态未知时保留 taskId 并禁止自动重试", () => {
+test("导入回执包含进度 JSON 和 ANSI 时读取最后一个完整结果", () => {
+  const result = runMigration("framed-permission", "framed-permission");
+  assert.notEqual(result.status, 0);
+  assert.equal(result.data.status, "failed");
+  assert.equal(result.data.error.code, "IMPORT_PERMISSION_DENIED");
+  assert.equal(result.calls.filter((call) => call.args.includes("+import")).length, 1);
+  assert.equal(existsSync(result.data.stateRecord), false, "明确权限失败不应留下未知状态");
+});
+
+test("导入失败 JSON 写入 stderr 时仍按结构化错误处理", () => {
+  const result = runMigration("stderr-permission", "stderr-permission");
+  assert.notEqual(result.status, 0);
+  assert.equal(result.data.status, "failed");
+  assert.equal(result.data.error.code, "IMPORT_PERMISSION_DENIED");
+  assert.equal(result.calls.filter((call) => call.args.includes("+import")).length, 1);
+  assert.equal(existsSync(result.data.stateRecord), false, "明确权限失败不应留下未知状态");
+});
+
+test("DOCX 超过导入上限时在调用 dws 前明确失败", () => {
+  const result = runMigration(
+    "oversized-docx",
+    "success",
+    [],
+    fixturePath,
+    { N2DD_IMPORT_MAX_BYTES: "1024" },
+  );
+  assert.notEqual(result.status, 0);
+  assert.equal(result.data.status, "failed");
+  assert.equal(result.data.stage, "convert");
+  assert.equal(result.data.error.code, "IMPORT_FILE_TOO_LARGE");
+  assert.match(result.data.error.message, /DOCX.*超过钉钉/u);
+  assert.equal(result.calls.some((call) => call.args.includes("+import")), false);
+  assert.equal(existsSync(result.data.stateRecord), false, "写入前失败不应留下任务锁");
+});
+
+test("写入状态未知后显式 force 允许再次创建文档", () => {
   const result = runMigration("unknown", "unknown");
   assert.notEqual(result.status, 0);
   assert.equal(result.data.status, "unknown");
@@ -185,11 +298,11 @@ test("写入状态未知时保留 taskId 并禁止自动重试", () => {
   const retry = runMigration("unknown", "unknown");
   assert.notEqual(retry.status, 0);
   assert.equal(retry.data.status, "unknown");
-  assert.equal(retry.data.error.code, "PREVIOUS_COMMIT_UNKNOWN");
-  assert.equal(retry.calls.length, 0, "未知写入状态不能再次调用 dws");
+  assert.equal(retry.data.error.code, "IMPORT_COMMIT_UNKNOWN");
+  assert.equal(retry.calls.filter((call) => call.args.includes("+import")).length, 1);
 });
 
-test("导入返回非 JSON 时按未知状态处理并锁止重试", () => {
+test("导入返回非 JSON 后显式 force 允许再次创建文档", () => {
   const result = runMigration("malformed-import", "malformed-import");
   assert.notEqual(result.status, 0);
   assert.equal(result.data.status, "unknown");
@@ -199,8 +312,8 @@ test("导入返回非 JSON 时按未知状态处理并锁止重试", () => {
 
   const retry = runMigration("malformed-import", "malformed-import");
   assert.notEqual(retry.status, 0);
-  assert.equal(retry.data.error.code, "PREVIOUS_COMMIT_UNKNOWN");
-  assert.equal(retry.calls.length, 0, "非结构化导入结果不能自动重试");
+  assert.equal(retry.data.error.code, "IMPORT_COMMIT_UNKNOWN");
+  assert.equal(retry.calls.filter((call) => call.args.includes("+import")).length, 1);
 });
 
 test("目标目录与知识库参数必须且只能选择一个", () => {

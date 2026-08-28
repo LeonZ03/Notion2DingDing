@@ -8,6 +8,7 @@ import {
   rmSync,
   rmdirSync,
   unlinkSync,
+  writeFileSync,
 } from "node:fs";
 import path from "node:path";
 import test from "node:test";
@@ -69,13 +70,13 @@ function runMigration(name, fixture, imageCount, options = {}) {
   const logPath = path.join(workDirectory, "dws-calls.jsonl");
   const outputPath = path.join(workDirectory, "output.docx");
   const capturePath = path.join(workDirectory, "test-capture.docx");
-  const title = "阶段 3 自动验收-" + name + "-" + runNonce;
+  const title = options.title ?? "阶段 3 自动验收-" + name + "-" + runNonce;
   const args = [
     cliPath,
     "--input",
     fixture,
-    "--folder",
-    "fake-stage3-folder",
+    options.workspace ? "--workspace" : "--folder",
+    options.workspace ?? "fake-stage3-folder",
     "--name",
     title,
     "--dws-path",
@@ -86,6 +87,9 @@ function runMigration(name, fixture, imageCount, options = {}) {
   }
   if (options.force) {
     args.push("--force");
+  }
+  if (options.subpages) {
+    args.push("--subpages", options.subpages);
   }
   const result = spawnSync(process.execPath, args, {
     cwd: repoRoot,
@@ -98,6 +102,7 @@ function runMigration(name, fixture, imageCount, options = {}) {
       N2DD_FAKE_CAPTURE_DOCX: capturePath,
       N2DD_STATE_DIRECTORY: stateRoot,
       N2DD_TEMP_DIRECTORY: temporaryRoot,
+      ...(options.env ?? {}),
     },
     maxBuffer: 64 * 1024 * 1024,
     windowsHide: true,
@@ -167,9 +172,26 @@ test.before(() => {
   mkdirSync(runtimeRoot, { recursive: true });
 });
 
-test("中文、URL 编码、嵌套子页面和特殊块生成明确映射报告", () => {
+test("HTML 中的中文、URL 编码、嵌套子页面和特殊块生成明确映射报告", () => {
+  const expectedSubpageLinks = [
+    {
+      sourcePageIndex: 0,
+      label: "子页面入口",
+      targetPageIndex: 1,
+      targetTitle: "子页面",
+    },
+    {
+      sourcePageIndex: 1,
+      label: "孙页面入口",
+      targetPageIndex: 2,
+      targetTitle: "孙页面",
+    },
+  ];
   const result = runMigration("subpages-special", subpageFixture, 2, {
     defaultOutput: true,
+    env: {
+      N2DD_FAKE_SUBPAGE_LINKS: JSON.stringify(expectedSubpageLinks),
+    },
   });
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.data.success, true);
@@ -195,18 +217,68 @@ test("中文、URL 编码、嵌套子页面和特殊块生成明确映射报告"
   assert.equal(mappings.callout.status, "mapped");
   assert.equal(mappings.toggle.detectedCount, 1);
   assert.equal(mappings.toggle.status, "degraded");
-  assert.equal(mappings.columns.status, "source_flattened");
+  assert.equal(mappings.columns.status, "not_present");
   assert.equal(mappings.database.detectedCount, 1);
   assert.equal(mappings.database.status, "degraded");
   assert.match(mappings.database.files[0].sha256, /^[A-F0-9]{64}$/u);
+  assert.equal(mappings.subpageLinks.detectedPageCount, 2);
+  assert.equal(mappings.subpageLinks.detectedLinkCount, 2);
+  assert.deepEqual(
+    mappings.subpageLinks.links.map(({ sourcePageIndex, label, targetPageIndex, targetTitle }) => ({
+      sourcePageIndex,
+      label,
+      targetPageIndex,
+      targetTitle,
+    })),
+    expectedSubpageLinks,
+  );
+  assert.equal(mappings.subpageLinks.status, "preserved");
+  assert.equal(mappings.subpageLinks.nativeRestore.nativeCount, 1);
+  assert.equal(mappings.subpageLinks.nativeRestore.nativeItemCount, 2);
+  assert.equal(mappings.subpageLinks.nativeRestore.updatedCount, 1);
+  assert.equal(mappings.subpageLinks.nativeRestore.deletedCount, 1);
+  assert.equal(mappings.subpageLinks.nativeRestore.verified, true);
+  assert.equal(result.data.checks.expectedSubpageEntryCount, 2);
+  assert.equal(result.data.checks.nativeSubpageTocCount, 1);
+  assert.equal(result.data.checks.nativeSubpageTocItemCount, 2);
+  assert.equal(result.data.checks.subpageTocMatches, true);
+  const subpageUpdates = result.calls.filter((call) => {
+    const elementIndex = call.args.indexOf("--element");
+    return elementIndex >= 0 && call.args[call.args.indexOf("--block-id") + 1]
+      ?.startsWith("fake-subpage-link-") &&
+      call.args[elementIndex + 1].startsWith('["toc",');
+  });
+  assert.equal(subpageUpdates.length, 1);
+  const tocElement = JSON.parse(
+    subpageUpdates[0].args[subpageUpdates[0].args.indexOf("--element") + 1],
+  );
+  assert.equal(tocElement[0], "toc");
+  assert.equal(tocElement[1].title, "子页面");
+  assert.deepEqual(
+    tocElement[1].content.map(({ text, anchorId, level }) => ({ text, anchorId, level })),
+    [
+      { text: "子页面", anchorId: "fake-subpage-heading-1", level: 2 },
+      { text: "孙页面", anchorId: "fake-subpage-heading-2", level: 2 },
+    ],
+  );
+  assert.equal(JSON.stringify(tocElement).includes('"data-type":"refer"'), false);
+  const subpageDeletes = result.calls.filter((call) =>
+    call.args?.[0] === "doc" && call.args?.[1] === "block" &&
+    call.args?.[2] === "delete"
+  );
+  assert.equal(subpageDeletes.length, 1);
+  assert.equal(subpageDeletes[0].args.includes("--yes"), true);
+  assert.equal(
+    subpageDeletes[0].args[subpageDeletes[0].args.indexOf("--block-id") + 1],
+    "fake-subpage-link-2",
+  );
 
   const warningCodes = new Set(result.data.local.warnings.map((warning) => warning.code));
   for (const code of [
     "SUBPAGES_APPENDED",
-    "CALLOUT_TO_BLOCKQUOTE",
+    "CALLOUT_CONTENT_PRESERVED",
     "TOGGLE_EXPANDED",
     "DATABASE_TO_CSV_NOTE",
-    "COLUMNS_LINEARIZED_BY_EXPORT",
   ]) {
     assert.ok(warningCodes.has(code), "缺少降级或映射报告：" + code);
   }
@@ -215,6 +287,8 @@ test("中文、URL 编码、嵌套子页面和特殊块生成明确映射报告"
     "PARENT-FINAL",
     "CHILD-FINAL",
     "GRANDCHILD-FINAL",
+    "子页面",
+    "孙页面",
     "Callout",
     "Toggle",
   ]) {
@@ -263,6 +337,211 @@ test("八个图片引用按 SHA-256 去重并可核对全部输出位置", () =>
   assert.equal(repeated.calls.length, 0, "相同成功任务不应再次调用 dws");
 });
 
+test("递归文档树为每个 Notion 页面创建同名文件夹和独立文档并回填链接", () => {
+  const title = "递归文档树自动验收-" + runNonce;
+  const treeLinks = {
+    [title]: [{ label: "子页面入口" }],
+    子页面: [{ label: "孙页面入口" }],
+    孙页面: [],
+  };
+  const first = runMigration("recursive-tree", subpageFixture, 0, {
+    title,
+    subpages: "tree",
+    defaultOutput: true,
+    env: {
+      N2DD_FAKE_TREE_LINKS: JSON.stringify(treeLinks),
+      N2DD_FAKE_TREE_IMAGE_COUNTS: JSON.stringify({ [title]: 0, 子页面: 1, 孙页面: 1 }),
+    },
+  });
+  assert.equal(first.status, 0, first.stderr);
+  assert.equal(first.data.success, true);
+  assert.equal(first.data.mode, "tree");
+  assert.equal(first.data.checks.recursivePageCount, 3);
+  assert.equal(first.data.checks.recursiveFolderCount, 3);
+  assert.equal(first.data.checks.recursiveLinkCount, 2);
+  assert.equal(first.data.checks.recursiveLinksMatch, true);
+  assert.equal(first.data.checks.expectedImageCount, 2);
+  assert.equal(first.data.checks.readbackImageCount, 2);
+  assert.equal(first.data.local.docx.count, 3);
+  assert.equal(first.data.local.docx.permanentlyDeleted, true);
+  assert.equal(first.data.cleanup.verified, true);
+  assert.match(first.data.remote.documentUrl, /fake-tree-node-1$/u);
+  assertMinimalState(first);
+
+  const folderCalls = first.calls.filter((call) =>
+    call.args?.[0] === "drive" && call.args?.[1] === "mkdir"
+  );
+  assert.equal(folderCalls.length, 3);
+  assert.equal(folderCalls[0].args[folderCalls[0].args.indexOf("--folder") + 1], "fake-stage3-folder");
+  assert.equal(folderCalls[1].args[folderCalls[1].args.indexOf("--folder") + 1], "fake-tree-folder-1");
+  assert.equal(folderCalls[2].args[folderCalls[2].args.indexOf("--folder") + 1], "fake-tree-folder-2");
+
+  const imports = first.calls.filter((call) =>
+    call.args?.[0] === "doc" && call.args?.[1] === "+import"
+  );
+  assert.equal(imports.length, 3);
+  assert.deepEqual(
+    imports.map((call) => call.args[call.args.indexOf("--folder") + 1]),
+    ["fake-tree-folder-1", "fake-tree-folder-2", "fake-tree-folder-3"],
+  );
+  const linkUpdates = first.calls.filter((call) => {
+    const element = call.args?.[call.args.indexOf("--element") + 1] ?? "";
+    return call.args?.[0] === "doc" && call.args?.[1] === "block" &&
+      call.args?.[2] === "update" && element.includes("https://alidocs.dingtalk.com/i/nodes/fake-tree-node-");
+  });
+  assert.equal(linkUpdates.length, 2);
+  const updatedElements = linkUpdates.map((call) =>
+    call.args[call.args.indexOf("--element") + 1]
+  );
+  assert.ok(updatedElements[0].includes("https://alidocs.dingtalk.com/i/nodes/fake-tree-node-2"));
+  assert.ok(updatedElements[1].includes("https://alidocs.dingtalk.com/i/nodes/fake-tree-node-3"));
+
+  const repeated = runMigration("recursive-tree", subpageFixture, 0, {
+    title,
+    subpages: "tree",
+    defaultOutput: true,
+    env: {
+      N2DD_FAKE_TREE_LINKS: JSON.stringify(treeLinks),
+      N2DD_FAKE_TREE_IMAGE_COUNTS: JSON.stringify({ [title]: 0, 子页面: 1, 孙页面: 1 }),
+    },
+  });
+  assert.equal(repeated.status, 0, repeated.stderr);
+  assert.equal(repeated.data.reused, true);
+  assert.equal(repeated.calls.length, 0, "相同递归任务不应再次创建文件夹或文档");
+});
+
+test("文件夹目标属于 Workspace 时解析真实 workspaceId 并用 Wiki 接口递归", () => {
+  const title = "Workspace 文件夹递归自动验收-" + runNonce;
+  const result = runMigration("recursive-workspace-folder-tree", longFixture, 0, {
+    title,
+    subpages: "tree",
+    defaultOutput: true,
+    env: {
+      N2DD_FAKE_FOLDER_WORKSPACE_ID: "fake-resolved-workspace",
+      N2DD_FAKE_TREE_LINKS: JSON.stringify({ [title]: [] }),
+      N2DD_FAKE_TREE_IMAGE_COUNTS: JSON.stringify({ [title]: 0 }),
+    },
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.data.success, true);
+  const targetReads = result.calls.filter((call) =>
+    call.args?.[0] === "wiki" && call.args?.[1] === "+node-get"
+  );
+  assert.equal(targetReads.length, 1);
+  assert.ok(targetReads[0].args.includes("fake-stage3-folder"));
+  assert.equal(result.calls.some((call) =>
+    call.args?.[0] === "drive" && call.args?.[1] === "+inspect"
+  ), false, "Workspace 节点解析成功后不应再按钉盘探测");
+  const wikiCreates = result.calls.filter((call) =>
+    call.args?.[0] === "wiki" && call.args?.[1] === "+node-create"
+  );
+  assert.equal(wikiCreates.length, 1);
+  assert.equal(wikiCreates[0].args[wikiCreates[0].args.indexOf("--workspace") + 1], "fake-resolved-workspace");
+  assert.equal(wikiCreates[0].args[wikiCreates[0].args.indexOf("--folder") + 1], "fake-stage3-folder");
+  assertMinimalState(result);
+});
+
+test("旧版误把 Workspace 文件夹按 Drive 处理的未知状态可安全恢复", () => {
+  const title = "旧版 Workspace 路由恢复-" + runNonce;
+  const commonEnv = {
+    N2DD_FAKE_FOLDER_WORKSPACE_ID: "fake-resolved-workspace",
+    N2DD_FAKE_TREE_LINKS: JSON.stringify({ [title]: [] }),
+    N2DD_FAKE_TREE_IMAGE_COUNTS: JSON.stringify({ [title]: 0 }),
+  };
+  const failed = runMigration("legacy-workspace-folder-recovery", longFixture, 0, {
+    title,
+    subpages: "tree",
+    defaultOutput: true,
+    env: { ...commonEnv, N2DD_FAKE_WIKI_FOLDER_UNKNOWN: "1" },
+  });
+  assert.notEqual(failed.status, 0);
+  assert.equal(failed.data.error.code, "TREE_FOLDER_CREATE_UNKNOWN");
+  const legacyState = JSON.parse(readFileSync(failed.data.stateRecord, "utf8"));
+  delete legacyState.target.backend;
+  delete legacyState.target.workspaceId;
+  writeFileSync(failed.data.stateRecord, JSON.stringify(legacyState, null, 2), "utf8");
+
+  const recovered = runMigration("legacy-workspace-folder-recovery", longFixture, 0, {
+    title,
+    subpages: "tree",
+    defaultOutput: true,
+    env: commonEnv,
+  });
+  assert.equal(recovered.status, 0, recovered.stderr);
+  assert.equal(recovered.data.success, true);
+  assert.equal(recovered.calls.filter((call) =>
+    call.args?.[0] === "wiki" && call.args?.[1] === "+node-create"
+  ).length, 1);
+  assert.equal(recovered.calls.filter((call) =>
+    call.args?.[0] === "wiki" && call.args?.[1] === "+node-list"
+  ).length, 1, "恢复前必须完整回读父目录并确认没有同名文件夹");
+  assertMinimalState(recovered);
+});
+
+test("旧未知状态回读到同名文件夹时继续禁止自动重试", () => {
+  const title = "旧状态同名保护-" + runNonce;
+  const commonEnv = {
+    N2DD_FAKE_FOLDER_WORKSPACE_ID: "fake-resolved-workspace",
+    N2DD_FAKE_TREE_LINKS: JSON.stringify({ [title]: [] }),
+    N2DD_FAKE_TREE_IMAGE_COUNTS: JSON.stringify({ [title]: 0 }),
+  };
+  const failed = runMigration("legacy-workspace-folder-conflict", longFixture, 0, {
+    title,
+    subpages: "tree",
+    defaultOutput: true,
+    env: { ...commonEnv, N2DD_FAKE_WIKI_FOLDER_UNKNOWN: "1" },
+  });
+  assert.notEqual(failed.status, 0);
+  const legacyState = JSON.parse(readFileSync(failed.data.stateRecord, "utf8"));
+  delete legacyState.target.backend;
+  delete legacyState.target.workspaceId;
+  writeFileSync(failed.data.stateRecord, JSON.stringify(legacyState, null, 2), "utf8");
+
+  const blocked = runMigration("legacy-workspace-folder-conflict", longFixture, 0, {
+    title,
+    subpages: "tree",
+    defaultOutput: true,
+    env: { ...commonEnv, N2DD_FAKE_EXISTING_TREE_FOLDER: title },
+  });
+  assert.notEqual(blocked.status, 0);
+  assert.equal(blocked.data.error.code, "PREVIOUS_TREE_FOLDER_UNKNOWN");
+  assert.match(blocked.data.error.message, /已经存在同名文件夹/u);
+  assert.equal(blocked.calls.some((call) =>
+    call.args?.[0] === "wiki" && call.args?.[1] === "+node-create"
+  ), false, "存在同名候选时不得再次创建目录");
+});
+
+test("递归文档树在知识库目标中使用原生 Wiki 文件夹", () => {
+  const title = "知识库递归自动验收-" + runNonce;
+  const result = runMigration("recursive-wiki-tree", longFixture, 0, {
+    title,
+    subpages: "tree",
+    workspace: "fake-stage3-wiki",
+    defaultOutput: true,
+    env: {
+      N2DD_FAKE_TREE_LINKS: JSON.stringify({ [title]: [] }),
+      N2DD_FAKE_TREE_IMAGE_COUNTS: JSON.stringify({ [title]: 0 }),
+    },
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.data.checks.recursivePageCount, 1);
+  assert.equal(result.data.checks.recursiveFolderCount, 1);
+  const wikiCreates = result.calls.filter((call) =>
+    call.args?.[0] === "wiki" && call.args?.[1] === "+node-create"
+  );
+  assert.equal(wikiCreates.length, 1);
+  assert.ok(wikiCreates[0].args.includes("--workspace"));
+  assert.ok(wikiCreates[0].args.includes("fake-stage3-wiki"));
+  assert.ok(wikiCreates[0].args.includes("--type"));
+  assert.ok(wikiCreates[0].args.includes("folder"));
+  assert.equal(wikiCreates[0].args.includes("--folder"), false, "知识库根页面文件夹应直接建在库根目录");
+  const imports = result.calls.filter((call) =>
+    call.args?.[0] === "doc" && call.args?.[1] === "+import"
+  );
+  assert.equal(imports.length, 1);
+  assert.ok(imports[0].args.includes("fake-tree-wiki-folder-1"));
+});
+
 test("缺失的嵌套子页面在调用钉钉前明确失败", () => {
   const copiedFixture = path.join(runtimeRoot, "missing-subpage-fixture");
   rmSync(copiedFixture, { recursive: true, force: true });
@@ -271,7 +550,7 @@ test("缺失的嵌套子页面在调用钉钉前明确失败", () => {
     copiedFixture,
     "父页面 44444444444444444444444444444444",
     "子页面 55555555555555555555555555555555",
-    "孙页面 66666666666666666666666666666666.md",
+    "孙页面 66666666666666666666666666666666.html",
   );
   assert.ok(existsSync(missingPage));
   unlinkSync(missingPage);

@@ -19,19 +19,27 @@ $completed = $false
 
 try {
     Write-Host '=== 使用目录输入验证 ==='
-    & $convertScript `
+    $directoryJson = & $convertScript `
         -InputPath $fixtureRoot `
         -OutputPath $directoryOutput `
         -ExpectedImageCount 2 `
-        -RequiredText @('阶段 1 验证页面', '图片一', '图片二')
+        -RequiredText @('图片一', '图片二')
+    $directoryResult = $directoryJson | ConvertFrom-Json
+    if ($directoryResult.mappings.documentTitle.duplicateTitleBlockCount -ne 0) {
+        throw '目录输入生成的 DOCX 正文仍包含重复根页面标题。'
+    }
 
     Write-Host '=== 使用 ZIP 输入验证 ==='
     [IO.Compression.ZipFile]::CreateFromDirectory($fixtureRoot, $temporaryZip)
-    & $convertScript `
+    $zipJson = & $convertScript `
         -InputPath $temporaryZip `
         -OutputPath $zipOutput `
         -ExpectedImageCount 2 `
-        -RequiredText @('阶段 1 验证页面', '图片一', '图片二')
+        -RequiredText @('图片一', '图片二')
+    $zipResult = $zipJson | ConvertFrom-Json
+    if ($zipResult.mappings.documentTitle.duplicateTitleBlockCount -ne 0) {
+        throw 'ZIP 输入生成的 DOCX 正文仍包含重复根页面标题。'
+    }
 
     $completed = $true
 }

@@ -66,6 +66,23 @@ function Invoke-Tool {
     }
 }
 
+function Resolve-DwsExecutionPath {
+    param(
+        [Parameter(Mandatory)][string]$CommandPath,
+        [string]$NodePath
+    )
+
+    if (-not $NodePath) { return $CommandPath }
+    $extension = [IO.Path]::GetExtension($CommandPath).ToLowerInvariant()
+    $baseName = [IO.Path]::GetFileNameWithoutExtension($CommandPath)
+    if ($baseName -ine 'dws' -or $extension -notin @('.ps1', '.cmd')) { return $CommandPath }
+    $candidate = Join-Path ([IO.Path]::GetDirectoryName($CommandPath)) 'node_modules\dingtalk-workspace-cli\bin\dws.js'
+    if (Test-Path -LiteralPath $candidate -PathType Leaf) {
+        return (Resolve-Path -LiteralPath $candidate).Path
+    }
+    return $CommandPath
+}
+
 function Add-Check {
     param(
         [Parameter(Mandatory)][AllowEmptyCollection()][System.Collections.ArrayList]$Checks,
@@ -149,7 +166,8 @@ if ($DataDirectory) {
 
 $dwsPath = Resolve-ToolCommand -Command $DwsCommand
 if ($dwsPath) {
-    $dwsVersionResult = Invoke-Tool -CommandPath $dwsPath -Arguments @('--version') -NodePath $nodePath
+    $dwsExecutionPath = Resolve-DwsExecutionPath -CommandPath $dwsPath -NodePath $nodePath
+    $dwsVersionResult = Invoke-Tool -CommandPath $dwsExecutionPath -Arguments @('--version') -NodePath $nodePath
     $dwsVersionMatch = [regex]::Match($dwsVersionResult.Output, 'v(\d+\.\d+\.\d+)')
     $dwsVersion = if ($dwsVersionMatch.Success) { $dwsVersionMatch.Groups[1].Value } else { '' }
     $dwsReady = $dwsVersionResult.ExitCode -eq 0 -and $dwsVersion -eq '1.0.59'
@@ -161,11 +179,15 @@ if ($dwsPath) {
     if (-not [string]::IsNullOrWhiteSpace($configuredProfile)) {
         $authArguments += @('--profile', $configuredProfile)
     }
-    $authResult = Invoke-Tool -CommandPath $dwsPath -Arguments $authArguments -NodePath $nodePath
+    $authResult = Invoke-Tool -CommandPath $dwsExecutionPath -Arguments $authArguments -NodePath $nodePath
     $authenticated = $false
+    $authParsed = $false
+    $authTokenValid = $false
     if ($authResult.ExitCode -eq 0 -and $authResult.Output) {
         try {
             $auth = $authResult.Output | ConvertFrom-Json
+            $authParsed = $true
+            $authTokenValid = $auth.token_valid -ne $false
             $authenticated = $auth.authenticated -eq $true -and $auth.token_valid -ne $false
         }
         catch {
@@ -174,7 +196,8 @@ if ($dwsPath) {
     }
     $authenticated = $authenticated -and $dwsReady
     $authMessage = if ($authenticated) { '钉钉登录状态有效。' } else { '钉钉尚未登录、Token 已失效、dws 版本不匹配或状态无法读取。' }
-    Add-Check -Checks $checks -Name 'dwsAuth' -Ready $authenticated -Message $authMessage -Required '有效 dws 登录状态' -Fix 'dws auth login'
+    $authDetected = "exit=$($authResult.ExitCode); bytes=$([Text.Encoding]::UTF8.GetByteCount([string]$authResult.Output)); json=$authParsed; tokenValid=$authTokenValid"
+    Add-Check -Checks $checks -Name 'dwsAuth' -Ready $authenticated -Message $authMessage -Detected $authDetected -Required '有效 dws 登录状态' -Fix 'dws auth login'
 }
 else {
     Add-Check -Checks $checks -Name 'dws' -Ready $false -Message '未找到 DingTalk Workspace CLI。' -Required 'dingtalk-workspace-cli 1.0.59' -Fix 'npm install -g dingtalk-workspace-cli@1.0.59'

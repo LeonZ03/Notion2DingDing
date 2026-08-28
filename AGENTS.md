@@ -4,13 +4,17 @@
 
 Notion2DingDing 将 Notion 页面迁移为可编辑的钉钉富文本文档。
 
-当前第一目标是尽快交付一个在本地 Windows 环境中真正可用、可重复验证的迁移工具。先打通“Notion 导出内容 → 本地转换 → 钉钉富文档”的完整链路，再考虑 Edge 插件、Native Messaging 和一键迁移体验。
+当前第一目标是尽快交付一个在本地 Windows 环境中真正可用、可重复验证的迁移工具。先完成“Notion 导出内容 → Windows 一键界面 → 本地转换 → 钉钉富文档”的完整链路，再考虑 Edge 插件和 Native Messaging。
 
 迁移成功的核心标准不是“文字复制过去了”，而是：正文结构可编辑、图片由钉钉持久托管、迁移结果可验证、失败可恢复、重复执行不会无提示地产生重复文档。
 
 ## 产品契约
 
-- 近期默认工作流是“导出 Notion 页面 → 在本地运行迁移工具 → 生成钉钉富文档”。
+- 近期默认工作流是“导出 Notion 页面 → 在 Windows 一键界面选择导出包并点击转换 → 生成钉钉富文档”；CLI 继续作为开发、自动化和故障排查入口。
+- 当前唯一受支持的 Notion 输入格式是官方 `HTML` 导出 ZIP 或其解压目录；一键界面和 CLI 都必须拒绝 `Markdown & CSV` 导出，并给出重新按 `HTML` 导出的中文操作提示，不保留面向用户的 Markdown 兼容模式。
+- HTML 转换必须读取 Notion 导出的 `column-list`、`column` 和列宽信息；同一行的图片、表格或混合内容必须在 DOCX 中保持同一行，不能再按块顺序线性降级。
+- Windows 一键界面必须直接浏览并选择钉钉文件夹，不得把 `nodeId`、`workspaceId` 等内部标识暴露为普通用户的必填项；CLI 可继续保留显式 ID 以支持自动化和排障。
+- 迁移标题必须默认从 Notion 导出包内的根页面推断，去除 Notion 页面 ID 等导出后缀；ZIP 文件名只能作为无法识别根页面时的最终兜底，用户仍可在界面中修改自动结果。
 - 目标必须是钉钉原生富文本文档，不是钉盘附件、聊天消息或只读预览。
 - 不得把 Notion 托管文件的临时签名 URL 作为最终图片地址。
 - 本地端到端迁移未通过验收前，不把 Edge 插件功能作为开发主线。
@@ -113,6 +117,13 @@ Windows 本地迁移工具（当前主线）
 
 每个阶段完成后，必须把实际验收命令、样例和结果更新到“当前进展”。
 
+验证采用分层执行，不把“阶段编号增加”理解为每次修改都必须串行重跑阶段 1 到当前阶段：
+
+- 纯扩展 HTML/CSS/图标改动只运行 `npm run check:extension`、阶段 6 UI 专项和真实弹窗尺寸渲染。
+- Go Native Host 改动运行 `npm run check:native`；迁移核心改动按影响选择阶段 2/3/4 对应测试。
+- 只有阶段正式收口、发布、协议跨组件变更、迁移核心公共契约变更，或出现无法定位影响面的风险时运行 `npm run check:all`。
+- 已通过且本次未受影响的历史阶段不因普通 UI 修正重复执行；测试失败后优先重跑失败项和直接依赖，确认跨组件风险时才再跑全量。
+
 ## 分阶段开发计划
 
 ### 阶段 0 — 仓库基础
@@ -195,91 +206,114 @@ Windows 本地迁移工具（当前主线）
 - [x] 最小幂等状态仍可阻止重复写入，但不包含正文、图片清单、原文件名、绝对路径或 DOCX 路径。
 - [x] `npm run check:stage3` 执行结束后不残留内容型测试产物，并完成一次真实迁移遗留数据的永久清理盘点。
 
-### 阶段 4 — 本地安装与日常使用体验
+### 阶段 4 — HTML 保真转换与本地日常使用体验
 
-状态：已完成（2026-08-25）
+状态：已完成（2026-08-25 用户真实验收通过）
 
 范围：
 
+- 仅接受 Notion 官方 `HTML` 导出 ZIP/目录；移除面向用户的 `Markdown & CSV` 输入路线。
+- 解析 HTML 中的多栏行、列宽、图片和表格，生成保留同一行布局的自包含 DOCX；优先继续复用 Pandoc，只用最小 Lua Filter 或 OOXML 补丁补齐其缺口。
 - 提供用户级 Windows 安装、依赖检测、配置、升级和卸载脚本。
-- 根据实际需要提供轻量交互式入口，但不为界面牺牲本地核心的可测试性。
+- 提供基于 Windows 自带组件的轻量一键使用界面，不引入 Electron，不复制迁移核心。
+- 界面负责选择或拖入 Notion 导出 ZIP/目录、自动识别并允许修改 Notion 根页面标题、浏览和选择钉钉文件夹、显示进度与错误、展示并打开最终文档链接。
+- 文件夹选择复用 DWS 的空间发现与钉盘目录读取能力，先列出“我的文件”和可访问企业空间，再按需分页展开子目录；不自研钉钉目录协议。
+- 安装后创建可从开始菜单直接启动的入口；普通迁移不要求打开终端或记忆命令。
 - 完善日志脱敏、诊断和常见错误恢复指引。
 
-验收：
+重新验收：
 
-- [x] 在干净的 Windows 用户环境完成安装、迁移和卸载。
-- [x] 缺少外部工具或登录状态时给出明确安装、登录或修复指引。
-- [x] 卸载只删除本项目拥有的注册表项和文件。
-- [x] 日常迁移不要求用户修改源代码或手工处理图片。
+- [x] HTML ZIP、解压目录和“外层 ZIP → 单个 Part ZIP → HTML”均可识别；Markdown 导出必须在钉钉写入前明确拒绝。
+- [x] 标题从根 HTML 页面的页面标题读取，去掉 Notion 页面 ID；随机 ZIP 名只能作为最终兜底。
+- [x] 脱敏夹具至少包含一行三张图片，以及一行“图片 + 表格”；生成 DOCX 后两类内容都保持在同一个布局行，并保留原始列数和相对列宽。
+- [x] DOCX 图片全部内嵌，不包含 Notion 临时 URL；图片、正文和普通数据表格仍可编辑或查看。
+- [x] 对固定 HTML 夹具运行 OOXML 结构审计，并使用实际 DOCX 渲染结果逐页检查，无重叠、裁切、错列或不可读缩放。
+- [x] 在干净的 Windows 用户环境完成安装、界面迁移、升级和卸载；开始菜单一键界面不要求打开终端。
+- [x] 用户可在界面中直接选择钉钉文件夹，首次保存后可复用；缺依赖或登录失效时给出中文修复入口。
+- [x] 转换、钉钉导入、回读、幂等和永久清理继续复用同一迁移核心；成功、失败和未知状态均不残留 HTML 副本、图片副本或 DOCX。
+- [x] 真实钉钉文档人工打开后，多栏图片和图片/表格混排与 Notion HTML 导出表达的行列关系一致，且图片由钉钉持久托管。
 
 ### 阶段 5 — Edge 与本地核心集成
 
-状态：待开始（阶段 4 已通过，等待用户推进）
+状态：已完成（2026-08-27 用户完成 Edge 重启持久性验收）
 
 范围：
 
 - 编译并注册 Windows Native Messaging Host。
 - 让 Edge 弹窗调用已经可用的本地迁移核心，而不是复制一套迁移逻辑。
 - 识别当前 Notion 页面并采集内容；无法保证完整性时引导使用导出包模式。
+- 选择官方 HTML ZIP 后从包内根页面自动填写并允许编辑标题；当前页标题只用于选包对照提示。显示钉钉登录状态和当前保存位置，并复用 Windows 工具完成授权与文件夹选择。
+- 子页面默认继续“在同页面内展开”；另提供可选“递归文档树”，为根页和每级子页面建立同名文件夹及独立钉钉文档，并把页面间链接回填为真实钉钉文档 URL。
 
 验收：
 
-- [ ] `npm run check:native`、`npm run check:extension` 和 `npm run check:all` 通过。
-- [ ] Edge 弹窗可显示本地助手版本、平台和真实健康状态。
-- [ ] 普通、长篇和多图片页面均通过人工迁移验收。
-- [ ] 页面未完整加载、无权限或类型不支持时明确阻止迁移。
-- [ ] 关闭并重新启动 Edge 后 Native Messaging 仍可用。
-- [ ] Edge 入口与本地 CLI 对同一输入得到等价结果。
+- [x] `npm run check:native`、`npm run check:extension` 和 `npm run check:all` 通过。
+- [x] Edge 弹窗可显示本地助手版本、平台和真实健康状态。
+- [x] 普通、长篇和多图片页面均通过人工迁移验收。
+- [x] 页面未完整加载、无权限或类型不支持时明确阻止迁移。
+- [x] 导出包根页面标题自动填入且可编辑；钉钉登录状态、保存位置及对应设置入口由 Native Host 提供，不把凭据或目标 ID 暴露给扩展。
+- [x] Windows 界面、CLI 和 Edge 均可选择子页面模式且默认值为 `inline`；`tree` 模式的层级创建、链接回填、未知状态停止和幂等复用已通过 Drive/Wiki 隔离回归。
+- [x] 关闭并重新启动 Edge 后 Native Messaging 仍可用。
+- [x] Edge 入口与本地 CLI 对同一输入得到等价结果。
 
 ### 阶段 6 — Edge 一键迁移体验
 
-状态：待开始
+状态：已完成（2026-08-28 用户真实验收通过）
 
 范围：
 
 - 完成目标位置选择、预检、迁移进度、取消、重试和结果链接。
+- 将选包拆成只读预检与开始转换两步：预检展示包内标题、导出时间和页面数量，确认前不得创建迁移任务或写入钉钉。
 - 将当前页模式与导出包模式统一到同一个任务模型。
 - 提供清晰的依赖安装、权限和授权引导。
+- 在上述功能闭环和可靠性验收完成后，最后执行一轮 Edge 扩展 UI 美化，不提前用视觉改版阻塞任务模型、取消和恢复能力。
+- 重新设计扩展图标：在遵守 Notion、钉钉品牌资源许可和使用规范的前提下，用清晰的“Notion → DingTalk”视觉关系让用途一目了然；同时保证 `16/32/48/128px` 下仍可辨识，不暗示本项目是两家产品的官方联合扩展。
+- 优化扩展弹窗内容与交互视觉，参考 Notion 克制、简洁、内容优先的设计语言，统一字体层级、留白、卡片、按钮、表单、状态颜色、进度、错误和成功结果；保留中文可读性，并兼顾 Edge 缩放和键盘操作。
 
 验收：
 
-- [ ] 新用户完成一次设置后，可从 Notion 页面一键发起迁移。
-- [ ] 迁移过程中能看到当前阶段和可操作错误。
-- [ ] 成功后可直接打开钉钉文档。
-- [ ] 取消和失败不会留下被报告为成功的半成品。
-- [ ] 24 小时后重新打开目标文档，正文图片仍正常显示。
+- [x] 新用户完成一次设置后，可从 Notion 页面一键发起迁移。
+- [x] 选择 ZIP 后先显示包内标题、导出时间和页面数量，只有再次点击“开始转换”才开始迁移。
+- [x] 迁移过程中能看到当前阶段和可操作错误。
+- [x] 成功后可直接打开钉钉文档。
+- [x] 取消和失败不会留下被报告为成功的半成品。
+- [x] 24 小时后重新打开目标文档，正文图片仍正常显示。
+- [x] 功能验收完成后再验收最终 UI：扩展图标在 `16/32/48/128px` 清晰可辨，弹窗在常见 Edge 缩放比例下无裁切、重叠或难读文本，加载、禁用、错误、成功和长内容状态均有一致反馈。
+- [x] Notion 和钉钉相关图形采用用户提供参考后生成的独立组合图标，不直接分发用户提供的原始品牌图片；界面明确表达迁移关系，不暗示官方联合产品。发布阶段继续在第三方与品牌说明中记录来源和非官方声明。
 
 ### 阶段 7 — 打包与发布
 
-状态：待开始
+状态：进行中（2026-08-28 已取得商店 ID，用户确认 v0.1.0 先以未签名安装器发布）
 
 范围：
 
-- 准备 Edge Add-ons 包、权限说明、隐私说明和 GitHub Release。
-- 建立版本兼容、回滚和发布检查。
-- 为使用到的第三方工具提供许可证清单和版本说明。
+- 冻结首个公开版本及扩展、Native Host、本地核心、Pandoc、dws 的兼容矩阵；版本不兼容时提供可执行的升级或回滚指引。
+- 生成 Edge Add-ons 提交包、本地工具与 Native Host 安装包、GitHub Release 附件及 SHA-256 校验和，并验证发布包不含凭据、用户文档、测试内容或临时数据。
+- 准备最小权限说明、隐私与数据生命周期说明、非官方产品声明、第三方许可证/版本清单、安装使用文档和已知限制。
+- 建立发布 CI、产物完整性检查和回滚检查；先形成可审阅的候选版本，得到用户确认后再执行 Edge Add-ons 提交和 GitHub Release 发布。
 
 验收：
 
-- [ ] 扩展与本地工具版本不兼容时给出升级指引。
-- [ ] Release 包含校验和、安装说明、第三方许可证和已知限制。
+- [x] 扩展与本地工具版本不兼容时给出升级指引。
+- [x] Release 候选包包含校验和、安装说明、第三方许可证和已知限制。
 - [ ] CI 对扩展、本地工具和发布产物执行完整检查。
 - [ ] 在干净 Windows 环境完成最终安装、迁移、升级和卸载测试。
+- [ ] Edge Add-ons 权限、隐私和商店文案经用户确认；候选包审核通过后再正式提交或发布。
 
 ## 当前进展
 
-最后更新：2026-08-25
+最后更新：2026-08-28
 
-当前阶段：阶段 5 — Edge 与本地核心集成（待开始）
+当前阶段：阶段 7 — 打包与发布（进行中）
 
-当前开发原则：阶段 4 的本地 CLI 已完成；进入阶段 5 后只让 Edge 复用同一迁移核心，不复制转换逻辑，也不引入 localhost HTTP 服务。
+当前开发原则：阶段 6 已由用户真实验收完成；阶段 7 以版本冻结、可审阅候选包、权限/隐私/许可证文档、发布验证和干净 Windows 验收为主，不再追加非发布必需的新功能。先在本地形成并验证候选包；任何 Edge Add-ons 提交、GitHub Release 发布或会影响外部账号的操作都需先获得用户确认。
 
 已完成：
 
 - GitHub 仓库已克隆并迁移到 `D:\Work\gadgets\Notion2DingDing`。
 - 初始化提交 `bc4ae23` 已推送到 GitHub `main` 分支。
-- Edge MV3 扩展、Go Native Host 和 Native Messaging v1 协议骨架已创建，但按新优先级暂缓继续开发。
-- Windows 构建与用户级 Native Host 注册脚本已创建。
+- Edge MV3 扩展、Go Native Host 和 Native Messaging v1 协议骨架已创建，并在阶段 5 接入同一个已安装迁移核心。
+- Windows 构建与用户级 Native Host 注册脚本已创建；注册脚本使用固定扩展公钥推导 ID、独立程序目录、所有权标记和当前用户注册表。
 - GitHub Actions Windows CI 已创建。
 - Node.js 依赖已安装，npm audit 报告 0 个漏洞。
 - `npm run check:extension` 已通过：TypeScript 类型检查成功，2 项协议测试通过。
@@ -298,7 +332,7 @@ Windows 本地迁移工具（当前主线）
 - 图片进入转换前会校验本地路径并记录来源、MIME、大小和 SHA-256；外部图片 URL、越界路径或缺失资源会在钉钉写入前失败。
 - 已实现稳定本地任务 ID、原子最小状态和幂等保护：已有成功记录默认复用；服务端写入状态未知时只保留任务哈希、目标和远端标识并禁止自动重试。
 - `tests/stage2/` 已覆盖成功、损坏 ZIP、缺失图片、未登录、无权限、结构化/非结构化写入状态未知和目标参数错误；未知写入的第二次执行确认不会再次调用 dws。
-- `npm run check:stage2` 已通过：阶段 1 目录与 ZIP 回归通过，阶段 2 共 8 项自动化测试全部通过。
+- `npm run check:stage2` 已通过：阶段 1 目录与 ZIP 回归通过，阶段 2 共 10 项自动化测试全部通过。
 - 已用一条命令把代表性夹具迁移到专用钉钉测试目录，真实文档为 <https://alidocs.dingtalk.com/i/nodes/20eMKjyp81ZeMOO4IrM01g0lWxAZB1Gv>。
 - 上述真实文档回读成功：标题匹配、正文存在、图片数量为 `2/2`；内容级检查确认标题、段落、嵌套列表、表格、代码文本、GitHub 链接和两张钉钉托管图片均存在。
 - 相同真实迁移命令第二次执行返回 `reused: true` 并跳过钉钉写入，没有创建重复文档。
@@ -307,22 +341,153 @@ Windows 本地迁移工具（当前主线）
 - 阶段 3 沿用“PowerShell 薄适配层 + Pandoc + dws”路线，没有增加新的生产依赖；根页面可从本地链接图自动推断，并递归追加可达子页面。
 - 已覆盖中文、空格、URL 编码路径、两层嵌套子页面和循环去重；入口不唯一时仍可用 `--entry` 明确指定根页面。
 - 图片审计现可核对源引用数、本地文件数、SHA-256 去重资源数、DOCX 媒体数、图片实际出现次数和关系数；任一图片缺失、越界、外链或计数不一致都会在写入前失败。
-- Callout 映射为带标识的引用内容；Toggle 展开为普通文本；多栏按 Notion 导出顺序线性排列；数据库保留 CSV 文件清单、哈希和显式降级提示。详细映射只随本次命令结果输出，不再持久化完整迁移报告。
+- Callout 映射为带标识的引用内容；Toggle 展开为普通文本；HTML 多栏映射为无边框布局表并保留同一行列数和相对列宽；普通 HTML 表格保留为可编辑表格。详细映射只随本次命令结果输出，不再持久化完整迁移报告。
 - 新增长篇、多图片和嵌套子页面固定夹具：长篇夹具包含 30 节、83 个 DOCX 段落；多图片夹具有 8 个引用并按 SHA-256 去重为 2 份资源；子页面夹具包含 3 个页面、2 层子页面、2 张图片和特殊块。
-- `npm run check:stage3` 已通过：阶段 1 目录与 ZIP 回归通过，阶段 2 的 8 项测试通过，阶段 3 的 4 项测试通过；缺失嵌套资源会在调用 dws 前失败。
-- 2026-08-25 重新执行 `npm run check:stage3` 通过：阶段 2 的 8 项和阶段 3 的 4 项全部通过；成功、转换失败、权限失败、结构化/非结构化写入未知均断言中间 DOCX 不存在，默认任务目录也已删除。
+- `npm run check:stage3` 已通过：阶段 1 目录与 ZIP 回归通过，阶段 2 的 10 项测试通过，阶段 3 的 4 项测试通过；缺失嵌套资源会在调用 dws 前失败。
+- 2026-08-25 重新执行 `npm run check:stage3` 通过：阶段 2 的 10 项和阶段 3 的 4 项全部通过；成功、转换失败、权限失败、结构化/非结构化写入未知均断言中间 DOCX 不存在，默认任务目录也已删除。
 - 中间 DOCX 现在位于单次任务目录，正常或异常收尾均用文件系统永久删除并验证路径不存在，不经过回收站；`CLEANUP_FAILED` 会阻止命令报告成功。
 - 完整磁盘报告已替换为 `%LOCALAPPDATA%\Notion2DingDing\state\migrations\` 下的最小幂等 JSON；自动测试确认其中没有输入路径、原文件名、DOCX 路径、正文、图片清单、映射或警告详情。
 - 阶段 1 的目录/ZIP 验收产物也已迁入独立临时目录，并在测试退出前永久删除；阶段 2、阶段 3 测试目录和 `.n2dd-tmp` 均在回归结束后确认不存在。
 - 用户确认后已永久删除本次真实迁移遗留：仓库 `artifacts`、原始/压缩处理目录、浏览器缓存和 Notion 导出 ZIP 共约 129 MB；5 个精确目标均已验证不存在，未进入回收站。
 - 已新增 `scripts/install-local-tool.ps1`，支持当前用户级 `Install`、`Upgrade` 和 `Uninstall`；程序、数据和命令入口分别位于 `%LOCALAPPDATA%\Programs\Notion2DingDing`、`%LOCALAPPDATA%\Notion2DingDing` 和 WindowsApps 下的 `n2dd.cmd`，不需要管理员权限或系统级注册表。
-- 安装包只复制迁移所需的 5 个脚本并记录 SHA-256；升级使用同级暂存目录替换带所有权标记的程序目录，独立保留配置和最小状态，旧版本多余文件不会残留。
+- 安装包只复制迁移所需的 7 个脚本并记录 SHA-256；升级使用同级暂存目录替换带所有权标记的程序目录，独立保留配置和最小状态，旧版本多余文件不会残留。
 - 已新增安装版 `n2dd` 命令，支持 `migrate`、`config`、`doctor`、`version`；保存默认 folder/workspace 与 profile 后，日常迁移只需提供 Notion ZIP/目录和可选标题，不必修改源码或处理图片。
 - `doctor` 会验证 Windows、Node.js 24+、Pandoc 3+、dws 精确版本 `1.0.59` 和钉钉登录状态；缺失或失效时返回 `winget`、`npm install -g` 或 `dws auth login` 修复命令，不输出凭据。
 - 卸载前必须同时验证程序、数据和 `n2dd.cmd` 的所有权标记；隔离测试确认同名非项目启动器会被拒绝删除，项目范围外文件和 Notion 源输入保持不变。
 - `npm run test:stage4` 已在系统临时目录模拟全新 Windows 用户根目录，完成首次安装、缺失/就绪诊断、配置、安装版夹具迁移、覆盖式升级、卸载、防误删和源输入哈希检查；整个隔离根目录在 finally 中永久删除。
-- `npm run check:stage4` 已通过：阶段 1、阶段 2 的 8 项、阶段 3 的 4 项和阶段 4 隔离安装闭环全部通过，回归结束后 `artifacts`、`.n2dd-tmp` 和 `notion2dingding-stage4-*` 均无残留。
-- 当前 Windows 用户已实际安装 `n2dd 0.1.0`，程序和启动器所有权标记有效；Node.js `24.16.0`、Pandoc `3.8.2.1` 与 dws `1.0.59` 均通过真实诊断。默认钉钉目标未擅自设置；最新 `n2dd doctor` 显示钉钉登录已失效，并准确提示先运行 `dws auth login`。
+- `npm run check:stage4` 已通过：阶段 1、阶段 2 的 10 项、阶段 3 的 4 项和阶段 4 隔离安装闭环全部通过，回归结束后 `artifacts`、`.n2dd-tmp` 和 `notion2dingding-stage4-*` 均无残留。
+- 当前 Windows 用户已实际安装 `n2dd 0.1.0`，程序、启动器和开始菜单入口所有权标记有效；Node.js `24.16.0`、Pandoc `3.8.2.1`、dws `1.0.59`、钉钉登录状态与已保存目标均通过真实诊断。
+- 阶段 4 按用户要求重新打开后，已新增 `scripts/notion2dingding-gui.ps1`：使用 Windows 自带 WinForms 提供 ZIP/目录选择、拖放、标题推断、folder/workspace 与 profile 配置、环境检查、钉钉登录、迁移状态、失败建议和结果链接，不引入 Electron 或新的生产依赖。
+- 一键界面通过独立后台进程调用安装版 CLI，最终仍进入阶段 3 的同一迁移核心；界面测试确认源输入哈希不变、中间 DOCX 永久删除、运行时临时目录不存在，并保留原有幂等保护。
+- 安装器已创建带独立所有权标记的开始菜单目录和 `Notion2DingDing.lnk`。真实 Windows 验证发现直接指向 PowerShell 的快捷方式会在约 5 秒后被系统移除，因此改为由内置 `wscript.exe` 调用项目自有 VBS 无控制台启动器；修正后等待 8 秒复查，快捷方式、目标和启动器均保持有效。
+- 已从真实开始菜单入口启动安装版界面完成可见性冒烟检查：PowerShell 控制台保持隐藏，WinForms 主窗口标题为 `Notion2DingDing`、窗口句柄非零且进程正常响应；界面当前保留打开，供用户直接验收和使用。
+- 用户真实点击界面时发现 WinForms 事件回调离开构造函数作用域后无法读取 `$state`，导致“开始转换”抛出未处理异常。现已让选择 ZIP、选择目录、拖放、环境检查、登录、开始转换、进度轮询、结果链接和关闭保护等全部事件显式捕获窗口状态，不再依赖已销毁的动态作用域。
+- `-SelfTest` 现在通过反射实际触发选择 ZIP、选择目录、环境检查、登录和开始转换五个按钮的 Click 事件，并断言每个回调都能读取窗口状态；`tests/stage4/run.ps1` 已将 `eventHandlersReady` 和开始转换事件列为阶段 4 硬性回归条件。
+- 真实点击“检查环境”进一步发现 Windows PowerShell 子进程的中文 JSON 被 GUI 按 UTF-8 读取时会乱码；安装版 CLI 现显式使用 UTF-8 输出，使界面中的中文诊断原因和修复建议可读。
+- 真实安装升级还发现开始菜单快捷方式把程序目录设为工作目录时，残留 PowerShell 会话会阻止整个程序目录原子替换。快捷方式和 VBS 子进程现统一使用 `%LOCALAPPDATA%\Notion2DingDing` 数据目录作为工作目录，阶段 4 测试会阻止此类安装目录锁定回归。
+- 当前用户安装已完成原位修复并恢复标准升级；在修复版 WinForms 窗口保持打开的情况下再次执行 `npm run upgrade:local` 成功，确认 GUI 和登录子进程不再因当前工作目录阻塞程序目录替换。
+- `npm run test:stage4` 已扩展为一键界面验收：Windows Forms 自检、拖放能力、开始菜单目标、界面内配置、界面迁移、结果 URL、升级、卸载、防误删和垃圾清理全部通过。
+- `npm run check:stage4` 已在正式仓库通过：阶段 1 两种输入、阶段 2 的 10 项、阶段 3 的 4 项以及阶段 4 一键界面闭环全部通过；测试使用脱敏夹具和 fake dws，没有创建新的真实钉钉文档。
+- 阶段 4 再次按用户要求重开后，WinForms 已移除普通用户需要填写的 `folder nodeId/workspaceId` 输入框，改为“选择钉钉文件夹”按钮和目录树；空间根节点来自 `dws wiki space list --type mySpace|orgSpace`，子目录来自 `dws drive +list`，按 50 条分页并设置 20 页/1000 项硬上限，超限或坏返回会明确失败而不静默截断。
+- 文件夹选择器展示“我的文件”和当前 DWS profile 有权访问的企业文档空间，按展开动作读取下一层，只展示 `type=FOLDER` 条目；最终仍保存真实 `nodeId` 供迁移核心使用，同时以 UTF-8 保存中文文件夹显示路径，CLI 的显式 folder/workspace 参数保持兼容。
+- 标题自动识别现先判定导出包中的唯一根 HTML 页面，优先读取 `.page-title` 或 `<title>` 以保留原始标点；缺失时使用去掉 32 位 Notion 页面 ID 的根页面文件名，随机 ZIP 名仅作为最终兜底，界面中仍允许用户修改。
+- HTML 标题读取和转换适配器均支持最多 3 层“外层 ZIP → 单个 Part ZIP → HTML”结构；多内层包或超深嵌套会明确失败，所有解压内容仍位于工具任务目录并永久清理。
+- 新增回归覆盖随机外层 ZIP、内层 Part ZIP、根页面/子页面链接、页面 ID 清理、一级标题兜底、空间发现、裸 `dws` 命令解析、普通文件过滤、文件夹多页合并、中文显示路径保存和升级保留；测试中的嵌套 ZIP 已实际完成 fake dws 迁移，而非只检查标题文本。
+- 中文文件夹路径首次隔离测试暴露 Windows PowerShell 5.1 按系统编码读取 UTF-8 配置的问题，现已对 GUI 与 CLI 配置读取显式指定 UTF-8；正式 DWS 验收又暴露无控制台进程无法解析裸 `dws` 到 npm `dws.ps1`，现会先用 Windows 命令解析再按 `.ps1/.cmd/.exe` 类型启动。
+- 旧版阶段 4 的 `npm run check:stage4` 曾通过；本轮已把标题和嵌套 ZIP 路线改为 HTML-only，Markdown-only 输入会在任何钉钉写入前明确拒绝并提示重新导出 HTML。
+- 用户提供的新 Notion HTML 导出包已只读检查：根页面包含 12 个 `column-list`、30 个 `column`，覆盖一行三张图片和 6 行图片/表格混排；这证明 HTML 保留了 Markdown 已丢失的行列与列宽信息，因此阶段 4 已按 HTML-only 方向重新打开。
+- 已新增 `scripts/notion-html-columns.lua` 和 `scripts/normalize-notion-docx-layout.ps1`：Pandoc 继续负责 HTML 与 DOCX 主转换，Lua Filter 识别 Notion `column-list`/`column`，并移除 `to-do-list` 被误加的普通圆点层；OOXML 后处理只负责列宽、单元格边距、无边框、列内图片上限和横向页面。
+- 脱敏 HTML 多栏夹具包含三图同排和 40% 图片/60% 表格同排；阶段 4 OOXML 审计确认两个布局行、原始列数和比例、无可见边框、图片不超出列宽，并在测试结束后永久删除 DOCX。
+- 用户真实 HTML ZIP 已使用当前转换器生成并审计：标题为“内蒙自驾（8.18 → 8.22）”，12 个多栏行与 30 列全部进入 DOCX，10/10 张图片全部内嵌，12 个普通表格保留，外部图片关系和 Notion 临时 URL 均为 0。
+- 真实 DOCX 已通过 Microsoft Word 渲染为 15 页并逐页检查：三张图片同排、图片/表格同排可见，没有重叠、裁切、错列或不可读缩放；渲染产生的 DOCX、PDF 和 PNG 仅用于本地验收，正式同步后永久删除。
+- HTML-only 版 `npm run check:stage3` 已串行通过：阶段 1 的目录/ZIP、阶段 2 的 10 项和阶段 3 的 4 项全部成功；阶段 4 隔离闭环也已通过安装、界面、文件夹选择、标题、Markdown 拒绝、多栏结构、迁移、升级、卸载、防误删和源输入保持不变。
+- HTML-only 版 `npm run check:stage4` 已在正式仓库 `D:\Work\gadgets\Notion2DingDing` 全量通过；测试结束后阶段 1、阶段 2、阶段 3 和阶段 4 的工具自有 DOCX、解压目录、图片副本与隔离用户目录均已永久清理。
+- 当前 Windows 用户安装版已通过 `npm run upgrade:local` 升级，Node.js、Pandoc、dws、登录状态和已保存钉钉目标全部就绪；安装版对用户 HTML ZIP 的只读标题识别精确返回“内蒙自驾（8.18 → 8.22）”，源 ZIP 仍存在且标题临时目录为 0。
+- 真实 HTML 迁移已创建文档 <https://alidocs.dingtalk.com/i/nodes/pYLaezmVNk6n4727FK9NaQM5JrMqPxX6>；钉钉因“我的文件”中已有同名旧文档，把新标题调整为“内蒙自驾（8.18 → 8.22）(1)”。服务端回读确认正文存在，10/10 张真实图片均为钉钉托管资源，另外 9 个图片标记是钉钉为清单生成的内联 SVG 装饰。
+- 上述真实写入首次因标题后缀和内联 SVG 计数被报告为 `READBACK_MISMATCH`，但返回了稳定文档 URL 且本地中间数据已永久清理。迁移核心现允许相同任务只恢复转换校验与回读，明确跳过再次导入；真实恢复结果为 `resumedReadback: true`、`readbackImageCount: 10`、`ignoredInlineImageCount: 9`，没有创建第三份文档。
+- 阶段 2 已新增“内联 SVG + 同名标题后缀”和“回读未知后仅恢复验证”两项回归，共 10 项全部通过；后一项断言恢复调用中 `+import` 为 0、`+fetch` 为 1。界面会明确显示标题被钉钉调整或恢复回读完成，不再把这两种情况显示成普通失败。
+- 断线恢复后的最终 `npm run check:stage4` 已再次全量通过：阶段 1 目录/ZIP、阶段 2 的 10/10、阶段 3 的 4/4 和阶段 4 一键界面闭环均成功；首次受沙箱限制的 `EPERM` 仅发生在 D 盘测试目录创建阶段，获得仓库写入权限后原命令通过。
+- 一键界面的同名标题提示曾因 PowerShell 把中文弯引号解释为字符串定界符而出现语法错误，现已改用书名号；阶段 4 在安装前新增 PowerShell AST 语法解析硬检查。当前用户安装版已再次执行 `npm run upgrade:local`，真实 `doctor` 全部就绪，安装版 `-SelfTest` 返回 `success: true`、全部六个事件检查通过。
+- 用户从一键界面迁移“山东自驾1（8.18 → 8.22）”时，dws 的超限失败回执曾被误判为 `IMPORT_COMMIT_UNKNOWN`，界面只显示尾部 `}`。只读回查“我的文件”根目录与完整名称搜索均确认两次尝试没有创建新文档；两条最小状态均无 `taskId` 和文档 URL，且中间数据已永久清理。
+- 根因是该 HTML 导出包生成的 DOCX 为 26.79 MiB，超过钉钉约 20 MiB 的 DOCX 导入上限。转换器现仅在源图片总体积超过 19 MiB 时，使用 Windows 自带 `System.Drawing` 在工具临时目录中把较大的 PNG 以 JPEG 质量 92 重新编码；源 ZIP 不修改，同时记录源/本地化 MIME、大小与 SHA-256。
+- 同一真实“山东自驾”导出包的只转换复验已通过：13 张大体积 PNG 从 26.95 MiB 优化为 6.50 MiB，最终 DOCX 为 6.30 MiB；21/21 张图片全部内嵌，外部图片关系和 Notion 临时 URL 均为 0，诊断 DOCX、解压目录和图片副本已永久删除。
+- 迁移核心新增最终 DOCX 20 MiB 硬性预检，超限时返回 `IMPORT_FILE_TOO_LARGE` 并保证 `+import` 调用为 0；dws 解析器也能从 ANSI、进度 JSON、多段 JSON 或 stderr 中提取最后一个完整结构化回执，真正无法确认写入时仍保持 `unknown` 防重复策略。
+- 阶段 2 回归现为 13/13，新增多段/ANSI 回执、stderr 回执和导入前超限三项；阶段 4 还会现场生成脱敏高熵 PNG，验证临时优化确实减小体积且 DOCX 无外链。修复后的 `npm run check:stage4` 已全量通过，所有测试临时目录和 DOCX 均已永久清理。
+- 当前用户安装版已执行 `npm run upgrade:local`，安装后的转换器和迁移核心 SHA-256 与仓库源码一致，真实 `doctor` 全部就绪，GUI `-SelfTest` 成功且事件回调可用。两条已确认未写入的错误 `unknown` 状态已按精确路径永久删除并验证不存在；用户源 ZIP 的 SHA-256 保持不变，相关诊断临时目录为 0。
+- 用户反馈“Notion2DingDing 验证输出”无法在文件夹树中看到。只读核对确认该目录真实 `spaceId=6259439166`，不属于当前 `wiki space list` 返回的“我的文件”或两个企业空间根，因此树状导航无法到达；阶段 4 选择器现新增 `dws drive +search` 全局文件夹搜索，按 30 条分页、最多 20 页，只展示 `type=FOLDER` 并保存真实 `nodeId`。
+- 用户真实山东 HTML 中检测到 14 条 Notion 待办（10 条已完成、4 条未完成）。Pandoc 原先把它们映射成普通圆点列表；当前 Lua Filter 会先移除圆点并保留 `☐/☒`，DOCX 审计要求数量、状态顺序一致且 `numPr=0`。导入后迁移核心再用官方 JSONML `isTaskList/isChecked` 把对应段落恢复为钉钉原生可点击待办，并在报告成功前分页回读验证；中途失败按写入未知处理，禁止重复导入。
+- `npm run test:stage4` 已直接通过：目录树外文件夹搜索分页与普通文件过滤、DOCX 待办方框/状态/无圆点、钉钉原生待办块更新与回读、安装/升级/卸载及垃圾清理均通过；本次没有运行阶段 1–3，也没有创建新的真实钉钉文档。
+- 真实待办恢复失败的根因已定位：迁移核心经 `powershell.exe -File dws.ps1` 传递 JSONML 时，Windows PowerShell 会破坏参数内的双引号，dws 因而收到非法 JSON。核心现对 npm 安装的 dws 直接调用 `node_modules/dingtalk-workspace-cli/bin/dws.js`，并把 `dws.ps1` 包装器参数保真加入阶段 4 硬回归。
+- `todo` 阶段的未知状态现可安全复用最小状态中的既有文档 URL：二次执行只重新核对源待办状态、补齐尚未成为原生待办的块并回读，不再重复导入文档；更新 JSONML 会移除 Word 导入遗留的无效样式属性，成功判定以服务端块回读为最终依据。
+- `npm run test:stage4` 已在上述修复后再次通过，新增“首个待办更新状态未知 → 二次执行从已有文档恢复 → 导入调用次数不增加”的回归；本次仍未运行阶段 1–3，fake dws 测试未创建真实文档。
+- 真实任务 `c0b1833325349de6af0632cb` 已原地恢复成功，继续使用同一文档 <https://alidocs.dingtalk.com/i/nodes/14lgGw3P8vkrwLLPuZ9K2LYNW5daZ90D> 和同一远端 taskId；服务端独立块回读确认 14/14 条均为原生 `isTaskList`，10 条已完成、4 条未完成、静态 `☐/☒` 为 0，状态顺序与 Notion 一致。21/21 张图片、标题和正文回读通过，中间 DOCX 永久清理；相同命令复跑返回 `reused: true` 并跳过重复写入。
+- 当前 Windows 用户安装版已再次执行 `npm run upgrade:local`，真实诊断全部就绪；安装版 GUI 源码 SHA-256 与仓库一致，并通过真实只读搜索精确找到“Notion2DingDing 验证输出”（nodeId `vy20BglGWO1yGMM0UvN626ZgJA7depqY`）。仓库 `.n2dd-tmp` 残留为 0。
+- 用户已确认真实山东文档的阶段 4 结果可用，阶段 4 于 2026-08-25 标记完成；后续不再以旧文档清理或阶段 4 人工布局复查阻塞阶段 5。
+- 阶段 5 已安装官方 Go `1.26.7 windows/amd64` 到当前用户目录，并通过 Go 单元测试、格式化和 `-trimpath` 构建生成 `dist/native-host/notion2dingding-host.exe`；项目最低 Go 版本仍为 `1.22`。
+- Native Messaging v1 现包含 `health.check`、`local.open` 与迁移相关方法：健康检查回读真实阶段 4 CLI 版本、登录状态、配置和目标显示路径；`local.open` 只允许打开钉钉登录或文件夹选择两种本地入口，不向扩展返回凭据或目标 ID；扩展入口接受单个不超过 46 MiB 的 ZIP，为 Base64 和 Native Messaging JSON 留出上限余量，把副本放入工具自有任务目录，调用已安装 CLI 后永久删除并验证目录不存在。Host stdout 只输出长度前缀协议帧，诊断走 stderr。
+- Edge 弹窗现使用 `activeTab`、`scripting`、`nativeMessaging` 三项最小权限识别 HTTPS Notion 页面；只采集标题和可见块/图片规模并始终标记 `exportRequired=true`，非 Notion、非 HTTPS、脚本不可访问或不完整页面会明确阻止当前页直迁，改为选择官方 HTML 导出 ZIP。
+- 扩展使用固定公钥，开发版 ID 为 `hheldkapioofhdbblmgfokdnpgfgaafo`；当前用户 Native Host 已安装到 `%LOCALAPPDATA%\Programs\Notion2DingDingNativeHost`，安装回执确认清单和 HKCU Edge Native Messaging 注册项指向同一 Host 且只允许该扩展来源。
+- `tests/stage5` 已通过隔离安装、状态、升级和卸载闭环；普通、长篇、多图片三类有效 ZIP 均经真实 Native Messaging 帧进入同一个 CLI 接口，源 SHA-256 与直接 CLI 输入一致，返回字段等价；非法路径、伪 ZIP、声称 DOM 完整的页面快照被拒绝，Host 重启后健康检查仍成功，暂存目录最终为空。
+- `npm run check:native` 通过全部 Go 包；`npm run check:extension` 通过 TypeScript、构建和 5 项扩展测试（含后台到固定 Native Host 的请求桥接）；最终 `npm run check:all` 全量通过阶段 1、阶段 2 的 13/13、阶段 3 的 4/4、阶段 4 一键闭环和阶段 5 自动验收，未创建真实钉钉文档。
+- 用户已在真实 Microsoft Edge 开发人员模式加载 `dist/edge-extension`，扩展 ID 与固定清单一致：`hheldkapioofhdbblmgfokdnpgfgaafo`。真实弹窗成功连接 Native Host 和已安装核心，并从 Edge 发起迁移；界面回读显示图片 `21/21`、钉钉原生待办 `14`、临时数据已清理且可打开最终钉钉文档。
+- 上述“当前页面不受支持”的首次判断不正确：用户确认活动标签页就是 Notion 界面，并由改进后的诊断提示确认真实主机名为 `app.notion.com`。根因是扩展域名白名单只覆盖旧的 `notion.so` 与子级 `notion.site`，第一次补丁又只加入 `notion.com`/`www.notion.com`，仍遗漏 Web 应用子域 `app.notion.com`。识别策略现明确覆盖 HTTPS `app.notion.com`、`notion.com`、`www.notion.com`、`notion.so`、`*.notion.so`、`notion.site` 与 `*.notion.site`；未命中时只回显安全主机名，便于继续排障而不泄露完整页面地址。
+- 用户从真实 Edge 弹窗再次迁移相同源 ZIP 时首次没有显示复用。只读核对确认最新任务 `7043a5d7f1867d9ccca253fe` 与旧任务的源 SHA-256、目标文件夹完全相同，但任务键还包含标题、入口和 profile；本次首次使用规范导出标题“山东自驾（8.18 → 8.22）”，因此合法创建为新任务。随后在真实安装版 CLI 上用同一 ZIP、标题、目标复跑，明确输出“跳过重复写入”、`reused: true`，并返回同一文档 URL `https://alidocs.dingtalk.com/i/nodes/N7dx2rn0Jb14aNNAUNMna0m0VMGjLRb3`，证明 Edge 与 CLI 的任务身份及幂等状态一致。此前“同一个 ZIP 就一定复用”的表述已纠正为“输入、标题、入口、目标和 profile 均相同才复用”。
+- 用户要求补齐阶段 5 的日常设置入口。扩展弹窗现把当前 Notion 页标题直接写入可编辑输入框，不再只显示占位文本；健康状态显示 DWS 是否登录和已保存的钉钉文件夹显示路径，并可通过 Native Host 打开 Windows 登录或文件夹选择界面。文件夹一经确认即由本地 CLI 原子保存，关闭设置窗口后重新检查即可回读。
+- 已核对 Notion 官方公开能力：官方帮助仅提供页面菜单中的 HTML 导出流程，公开 API 提供页面、块与 Markdown 读取，但没有生成官方 HTML ZIP 的接口。为保留 `column-list`、列宽、长页面和本地图片资源，阶段 5 不接入私有接口、Cookie 或脆弱的菜单自动点击，仍要求用户先取得官方 HTML ZIP。
+- 本轮 `npm run check:all` 再次全量通过：阶段 2 为 13/13、阶段 3 为 4/4、阶段 4 安装与界面闭环、扩展 5/5、全部 Go 包和阶段 5 Host 隔离验收均成功。当前用户本地工具与 Native Host 已升级；真实 `health.check` 返回 Host `0.3.0`、`windows/amd64`、`authenticated: true`、`configured: true`，目标显示路径为“Notion2DingDing 验证输出”。
+- 用户实测“选择 / 更改位置”时扩展提示已打开，但没有可见窗口。根因是 Edge 的单次 `sendNativeMessage` 响应后会结束 Native Host 所在的 Windows Job Object，异步启动的 WinForms 子进程尚未脱离该 Job，因而与 Host 一起被终止。Host `0.3.1` 现仅对登录/目标设置进程增加 `CREATE_BREAKAWAY_FROM_JOB`，同时保留 `CREATE_NO_WINDOW` 隐藏控制台；同步迁移子进程仍沿用原约束。Go 测试会硬性检查两个标志，`npm run check:native` 与 `npm run test:stage5` 均已通过。
+- 用户再次点击仍无窗口后，通过同一安装版命令直接复现到 PowerShell 异常：全局 `GetNewClosure()` 会复制尚未使用且为空的 `TargetType`，与其 `folder/workspace` 验证元数据冲突，导致 `-OpenAction target` 启动即退出。自动打开事件现改为使用窗体 `Tag` 状态且不创建全局闭包；阶段 4 新增 `openActionReady` 硬回归，完整 `npm run test:stage4` 已通过。当前用户本地工具已升级，安装版 `-SelfTest` 返回 `openActionReady: true`；真实 `-OpenAction target` 进程保持运行、窗口句柄非零且正常响应。为防 Edge 抢占前台，用户主动触发期间父窗口和文件夹对话框会临时置顶，操作结束后恢复普通层级。
+- 用户确认登录和文件夹窗口实际会出现，但读取期间缺少就近反馈，容易误判为点击无效。扩展按钮现会立即切换为带旋转动画的“正在打开登录…”或“正在读取目录…”，设置卡片同步显示“通常需要 3–10 秒”并暂时禁用相关操作，避免重复创建窗口；超过预期仍未切走时才恢复按钮并提示检查 Windows 任务栏。`npm run check:extension` 类型检查、构建及 5/5 测试通过。
+- 用户反馈 Notion 代码块经 DOCX 导入后变为普通文本。对真实文档 `gvNG4YZ7Jn4zpbbOIAYaRDdrW2LD0oRE` 的只读块回读确认三段代码均完整、且每段仍为单独的 `p` 块，但只带 Word `SourceCode` 样式，没有成为钉钉原生 `code` 块；因此无需合并块，根因是 DOCX 导入器没有映射该样式。
+- 转换器现从 Notion HTML 的 `<pre><code>` / `<pre>` 提取代码正文与可识别语言，并在写入前核对 DOCX `SourceCode` 数量、换行、缩进和正文顺序；迁移核心导入后只匹配这些段落，使用钉钉官方 JSONML `code` 块原位更新，再分页回读确认块类型、正文和语言。任务身份版本已提升，旧的纯文本成功状态不会被静默复用。
+- 原生代码块更新沿用待办的未知状态恢复契约：一旦已有真实文档 URL，二次执行只在原文档补齐代码块、待办和回读，不再次导入。阶段 4 新增三代码块夹具及“首个代码块更新状态未知 → 二次执行恢复 → 导入次数不增加”回归；`npm run test:stage4`、`npm run check:extension`、`npm run check:native` 均通过，自动测试未修改真实钉钉文档。
+- 代码块修复后的 `npm run check:all` 已全量通过：阶段 2 为 13/13、阶段 3 为 4/4、阶段 4 包含 `nativeCodeBlocks: true`，扩展 5/5、全部 Go 包和阶段 5 Native Host 隔离验收均成功；测试结束后仓库 `artifacts` 与 `.n2dd-tmp` 均不存在。
+- 当前 Windows 用户的本地核心和 Native Host 已升级；可联网健康检查返回 Host `0.3.1`、`windows/amd64`、`ready: true`、`authenticated: true`、`configured: true`，目标仍为“Notion2DingDing 验证输出”。诊断现在直接调用 npm dws 的 Node 入口，并只显示退出码、输出字节数、JSON 解析与 Token 有效性等安全元信息，避免受限网络环境被误解为安装损坏。
+- 用户反馈迁移后的钉钉文档出现三份同名根标题。DOCX 结构复现确认其中两份来自 Pandoc：HTML `<title>` 生成 `Title` 样式居中段落，根页 `<h1>` 生成同名 `Heading1`；第三份才是钉钉文档自身标题。转换器现让根标题只用于 dws `--name`，组合 HTML 不再注入 `<title>`，并移除根页 `page-title` 或与根标题同名的首个 `<h1>`；子页面标题与正文其他标题保留。
+- 新增 DOCX 根标题硬审计：`Title` 样式段落数必须为 0、与根标题同名的 `Heading1` 必须为 0，否则在钉钉导入前失败。任务身份版本提升到 3，旧的重复标题成功状态不会被复用；阶段 1 目录/ZIP 验收已通过并确认两个计数均为 0。
+- 标题去重修复后的 `npm run check:all` 已全量通过：阶段 2 为 13/13、阶段 3 为 4/4（并新增子/孙页面标题存在断言）、阶段 4 全部闭环、扩展 5/5、全部 Go 包和阶段 5 Native Host 验收成功。当前 Windows 用户本地核心已升级，安装诊断为 `ready: true`、钉钉登录和保存位置均有效；仓库无 `artifacts` 或 `.n2dd-tmp` 残留。
+- 用户反馈普通单图和复杂同行块在钉钉中带表格框。对 2026-08-26 10:46 的真实官方 `ExportBlock` ZIP 做只读结构复现：源 HTML 有 12 张普通图片、0 个 `column-list`，旧 DOCX 恰好产生 12 个 1×1 表格，且 12 张图片全部位于表格中；根因是 Pandoc 把 Notion `<figure class="image">` 实现为 Word Figure 表，而非多栏识别错误。
+- Lua Filter 现将 Notion 单图 Figure 改为普通图片段落，并把单列 `column-list` 直接解包；DOCX 布局审计新增布局列总数对账并拒绝任何少于两列的布局表。对同一真实 ZIP 重跑后，12/12 张图仍完整内嵌，DOCX 表格由 12 降为 0、表内图片由 12 降为 0，页面保持纵向。
+- 两列及以上的复杂同行仍保留无边框布局表，因为 DOCX 没有可验证的等价通用同行容器；按用户要求不以破坏原排版为代价移除。多栏夹具复验仍为 2 个布局行、5 个布局列、4 张图和 40%/60% 图表混排，列内图片不再嵌套 1×1 Figure 表。
+- 阶段 4 新增普通 Figure + 单列图片回归，硬性要求两处图片都存在、总表格数为 0、页面为纵向；`npm run test:stage4` 已通过并返回 `singleImageWithoutTable: true`。任务身份版本提升到 4，旧的图片表格成功状态不会被静默复用。
+- 单图去表格修复后的 `npm run check:all` 已全量通过：阶段 2 为 13/13、阶段 3 为 4/4、阶段 4 包含 `singleImageWithoutTable: true` 与既有多栏保真验收、扩展 5/5、全部 Go 包和阶段 5 Native Host 隔离验收均成功。当前 Windows 用户本地核心与 Native Host 已升级；真实健康检查返回 Host `0.3.1`、`windows/amd64`、`ready: true`、登录与保存位置均有效。
+- 用户继续要求复杂多块同行的外围表格“隐形”。钉钉官方 JSONML schema 已确认原生分栏复用 `table` 结构但以 `sr:true` 区分，支持 `colsWidth` 和 `spacing`；因此不再尝试用白色边框伪装，也不拆散同行内容。
+- DOCX 布局整理器现输出正文中全部表格的顺序、类型和首行列数；迁移核心导入后回读钉钉 JSONML，只选择保留 `Notion Columns` 专用样式且数量、列数与 DOCX 布局表一致的块原位设置为 `sr:true`，删除外层表格与直接单元格的 `bdr/fill`，保留列宽和子块。普通数据表不参与更新；专用样式或列数不一致时以 `LAYOUT_READBACK_MISMATCH` 停止。
+- 原生分栏恢复沿用写入未知状态契约：已有文档 URL 后，二次执行只继续分栏、代码块、待办和回读，不重复导入。阶段 4 fake dws 回归确认两个布局表更新为 `sr:true`、第三个真实数据表零更新，并覆盖“首个分栏更新状态未知 → 原文档恢复 → 导入次数不增加”；任务身份版本提升到 5。
+- 原生分栏修复后的 `npm run check:all` 已全量通过：阶段 2 为 13/13、阶段 3 为 4/4、阶段 4 返回 `singleImageWithoutTable: true`、`htmlLayoutFidelity: true`、`nativeColumns: true`，扩展 5/5、全部 Go 包和阶段 5 Native Host 隔离验收均成功。扩展协议与结果摘要新增原生分栏数量；当前 Windows 用户本地核心和 Native Host 已升级，真实健康检查为 Host `0.3.1`、`ready: true`、登录及保存位置有效。
+- 已确认当前 dws 的删除能力 `drive +delete` 只会把钉钉节点移入回收站，没有永久清除入口，因此未擅自删除旧版或新版文档。旧版无后缀文档正文约 1.3 万字符；新版 HTML 文档正文约 2.4 万字符并保留当前清单内容，后续以新版作为布局验收对象。
+- 用户真实任务 `2b1231cb554e26ca8dece244` 首次触发分栏安全校验。只读核对确认 DOCX 有 14 个布局表、3 个普通数据表，而钉钉导入后完整保留 14 个 `Notion Columns` 布局表，却只保留 2 个普通数据表；旧逻辑要求总表数完全一致，因而在修改前误报。现改为只按专用样式、布局数量和列数核对，普通表格无论保留还是降级都不参与分栏更新。
+- 真实恢复的第 2 个布局表又暴露 Word 导入遗留 `list.start: 0`，钉钉 JSONML schema 要求最小为 1。迁移核心现只把 `list.start<1` 最小化纠正为 1；阶段 4 fake dws 同时覆盖“普通数据表少回读 1 个”和该 schema 错误，继续验证普通数据表零更新、未知状态不重复导入。
+- 同一真实任务已原地恢复成功，仍使用原文档 <https://alidocs.dingtalk.com/i/nodes/mExel2BLV576gyyPCp1za2XE8gk9rpMq> 与远端 taskId。独立回读确认 14/14 个布局表均为 `sr:true`、无外框且 `spacing=12`，2 个保留的普通数据表均为 `sr=false`；21/21 张图片、14/14 原生待办、标题和正文回读通过。源 ZIP SHA-256 未变，中间 DOCX 永久清理；同命令复跑返回 `reused: true`。
+- 最终 `npm run check:all` 再次全量通过：阶段 2 为 13/13、阶段 3 为 4/4、阶段 4 包含普通表格缺失与无效列表起始值回归、扩展 5/5、全部 Go 包和阶段 5 Native Host 隔离验收均成功。当前 Windows 用户安装版已升级。
+- 用户迁移“260417 FPGA（VP1902）对接”时，转换器把 Notion 书签卡片中的远程 favicon/缩略图当成正文图片，因 `https://gw.alicdn.com/...ico` 尚未本地化而在写入前停止。真实外层 ZIP 内含 6 个 HTML 页面、16 张本地内容图片和 4 个书签卡片；6 个外部图片引用全部位于书签卡片，正文 Figure 中没有远程图片。
+- 转换器现只在 Notion 书签卡片范围内省略未随导出包提供的外部站点图标和缩略图，保留书签链接与文字，并报告 `BOOKMARK_EXTERNAL_PREVIEW_OMITTED`、书签数和省略数；书签外的 HTTP(S)/协议相对正文图片仍然硬失败。阶段 4 回归新增“书签链接保留 + 两张外部装饰图省略”以及“正文远程图片继续拒绝”，`npm run test:stage4` 与 `npm run check:all` 均通过。
+- 当前用户安装版已升级，并用同一真实 ZIP 成功创建钉钉文档 <https://alidocs.dingtalk.com/i/nodes/N7dx2rn0Jb14aNNAUNoxd7dkVMGjLRb3>：6/6 个页面、5 个子页面、16/16 张本地内容图片和 31/31 个原生代码块通过回读，4 个书签链接/文字保留，6 张未打包的外部书签预览图明确省略；中间 DOCX 已永久删除，源 ZIP SHA-256 保持不变。相同命令复跑返回 `reused: true` 和同一文档 URL，没有重复写入。
+- 上述真实文档暴露子页面入口缺口：DOCX 内部锚点虽保留蓝色链接文字，但钉钉导入器会把 `<a>` 的 `href` 清空。首次尝试把入口改为 `span data-type=refer` 后，服务端结构虽能精确指向 H2，真实 Web UI 却只显示引用图标，并提示“请在钉钉 App 中打开该引用文件”，证明 `refer` 在产品界面中是文件引用而非可靠的同文档跳转；该方案已撤销。
+- 用户确认改用一个钉钉原生目录替换 5 个错误引用。迁移核心现按标题、数量和顺序定位追加子页面的真实 H2 UUID，把第一个独立入口块改为 `toc`，显式写入只含子页面的 `text/anchorId/level=2` 项，并精确删除其余独立入口块；包含其他正文或无法唯一对账的块一律停止，不猜测、不删除。任务身份版本提升到 7。
+- 原生子页面目录沿用未知状态恢复契约：目录更新或旧入口删除回执不明确时，二次执行先回读已有文档，只补未完成动作，不重复导入。阶段 3 固定夹具验收一个含子/孙页面两项的原生目录、旧入口删除和精确 H2 锚点；阶段 4 覆盖“目录更新状态未知 → 原文档恢复 → 导入次数不增加”，并保留无顶层 ID 的无关图片块回归。GUI、Native Host、扩展协议与结果摘要改为报告目录项数量。
+- 真实任务 `d69801d421a54729c50e09c5` 的同一文档 <https://alidocs.dingtalk.com/i/nodes/dQPGYqjpJY1ARmmYUKvYl4r2Jakx1Z5N> 已原地修复：写前保存钉钉版本 37，第一个错误引用块更新为原生“子页面”目录，其余 4 个错误引用块删除。完整回读 180 个一级块确认恰有 1 个目录、5 个目录项，文字与 `anchorId` 分别精确对应五个 H2；旧块和全部 `data-type=refer` 均不存在，五个目标 H2 仍保留。
+- 原生子页面目录修复后的 `npm run check:all` 已全量通过：阶段 2 为 13/13、阶段 3 为 4/4，阶段 4 返回 `nativeSubpageToc: true`，扩展 5/5、全部 Go 包和阶段 5 Native Host 隔离验收均成功；自动回归未创建真实钉钉文档。
+- 用户要求保留当前“在同页面内展开”并新增可选“递归文档树”。CLI 新增 `--subpages inline|tree`（默认 `inline`），Windows WinForms 和 Edge 弹窗均提供相同选择；后续原生封面映射使当前任务身份版本更新为 `inline=8`、单页/递归节点 `=9`，避免复用旧版把封面写进正文的结果。
+- 递归模式先建立可达页面图，再为每页创建同名文件夹并把该页正文作为同名原生钉钉文档导入；创建前通过 `wiki +node-get` 识别已选 folder 的真实归属，Workspace 使用 `wiki +node-create --type folder`，真正的钉盘目标使用 `drive mkdir`。当前 DWS 不支持把文档直接作为下一层文档的父节点，因此用文件夹包装每页是实现真实递归层级且不依赖私有接口的稳定方案。
+- 每个子页面文档创建完成后，迁移核心按页面图把独立入口链接改为对应钉钉文档 URL 并回读精确验证；文件夹创建、文档导入或链接更新回执不明确时保留不含标题、文件名、正文、图片或绝对路径的最小状态并禁止盲目重试，后续可从已确认节点继续恢复。成功任务再次执行直接复用根文档 URL，不重复创建文件夹或文档。
+- 用户首次真实选择“递归文档树”迁移“指南”时，目标 folder `vy20BglGWO1yGMM0UvN626ZgJA7depqY` 实际属于 Workspace `OlnXRNY9lVy6bXLp`；旧实现按 Drive 调用导致 `missing_created_id` 并安全停止。只读 `wiki +node-get` 已确认真实归属，目标目录全量回读没有同名“指南”，`wiki +node-create` dry-run 也精确确认 workspace、父 folder、名称和类型参数，未产生新节点。
+- 修复后阶段 3 为 9/9，新增“folderId 自动解析为 Workspace”“旧版误路由 unknown 状态在完整回读确认零同名目录时安全恢复”及“存在同名候选继续禁止自动重试”；阶段 4 安装/升级/卸载和 GUI 默认值回归、扩展 5/5、全部 Go 包以及阶段 5 Native Messaging 均通过。2026-08-27 `npm run check:all` 全量成功，最终回读保护的 9/9 专项回归随后通过；当前用户本地核心再次升级且诊断 `ready: true`。
+- 用户于 2026-08-27 在地址栏执行 `edge://restart` 完整重启 Edge，重启后重新打开扩展，确认“本地核心”为绿色并显示“已就绪”。Native Messaging 注册持久性最后一项人工验收通过，阶段 5 正式标记完成；当前阶段切换为阶段 6。
+- 用户要求把扩展 UI 美化加入阶段 6，并明确安排在功能开发最后：范围包含可直观看出“Notion → DingTalk”用途的多尺寸插件图标，以及参考 Notion 简洁设计语言的弹窗内容与状态视觉。该项已在任务模型、取消和恢复功能完成后实施并通过专项验收。
+- Native Host 新增 `migration.start/status/cancel`，使用同一个长期 Native Messaging 连接承载任务；任务快照包含 `queued/running/cancel_requested/succeeded/failed/unknown/cancelled`、五阶段进度、可取消状态、恢复动作和最终结果。扩展只在 `chrome.storage.session` 保存 16 位 Native 任务 ID，弹窗关闭再打开可恢复状态，不保存 ZIP、标题、正文、图片、凭据或目标 ID。
+- 取消只允许在预检和本地转换阶段；进度进入钉钉导入后 `canCancel=false`，避免强杀进程留下无法确认的远端文档。取消路径会终止 Windows 进程树、永久删除 Native 暂存和本地核心临时目录，并返回 `cancelled`；写入未知继续返回 `unknown + recover` 并禁止重复导入。
+- 扩展弹窗首版曾重做为 Notion 风格的内容优先界面并通过自动检查，但真实 Edge 视觉后来被用户否决；该记录只保留为失败背景，不再作为最终 UI 验收证据。图标也已由用户提供的品牌参考图重新生成，旧代码绘制版本不再使用。
+- 浏览器真实渲染检查覆盖 420px 默认宽度和 340px 窄宽度：无横向溢出，窄宽度设置项自动单列，隐藏的任务/错误/结果卡不占空间；同时覆盖减少动态效果媒体查询、键盘焦点样式和长中文换行。首次检查发现作者级 `display:grid` 覆盖 `hidden`，已用统一 `[hidden]` 规则修复并复查。
+- `npm run check:all` 于 2026-08-27 全量通过：阶段 2 为 13/13、阶段 3 为 9/9、阶段 4 Windows 安装/GUI/内容回归成功、扩展 5/5、全部 Go 包、阶段 5 Native Host 隔离验收和阶段 6 的 4 项异步任务/UI/协议/图标专项测试全部成功。持久 Host 专项真实执行了进度轮询、取消、成功与暂存清理，两个终止路径的任务目录均为空。
+- 阶段 6 没有改变图片本地化、DOCX 或钉钉写入路径，继续复用已经超过 24 小时并由用户重新打开确认图片正常的真实迁移结果；图片仍由钉钉 `alidocs2` 持久托管，满足 24 小时图片验收。
+- 当前 Windows 用户的 Native Host 已升级；正常用户网络上下文执行 `npm run doctor:native` 返回 Host `0.3.1`、`windows/amd64`、六项能力、`ready: true`、`authenticated: true`、`configured: true`，保存位置为“Notion2DingDing 验证输出”。
+- 用户查看真实 Edge 弹窗后明确否决阶段 6 首版 UI：卡片嵌套过多、首屏纵向空间浪费、标题被裁切，整体排版不如阶段 5；先前仅检查 420/340px 无横向溢出和控件存在，未把“典型 Edge 弹窗首屏可用”作为硬条件，视觉验收结论撤销，阶段 6 重新打开。
+- 用户同时质疑普通任务反复执行阶段 1 到当前阶段的全量回归。全量回归用于保护共享迁移核心、协议和安装链路，阶段正式收口或跨组件变更时有价值；但纯 UI/图标修正不应承担该成本。必需验证已改为分层策略，本轮只执行扩展、阶段 6 UI 专项和真实尺寸渲染。
+- 用户提供 Notion 与钉钉参考图并要求重做图标。新的 `icon-master-v2.png` 已由 OpenAI 内置图像生成工具按两个参考图重新组合，再由 `scripts/generate-extension-icons.ps1` 确定性缩放为 `16/32/48/128px`；旧代码绘制矩形图标已废弃，最终视觉仍待随新弹窗一起验收。
+- 视觉返工不再沿用首版“卡片套卡片”：头部只保留品牌、用途和刷新；本地核心/当前页合并成浅灰状态区，登录和保存位置改为两行信息，标题、子页面模式和迁移按钮全部进入首屏。真实 Edge 验收发现 `max-width: 100vw` 会让弹窗跟随异常窄的初始视口继续收缩；现已移除该规则并固定 `400px` 宽度与最小宽度。定向浏览器审计结果为 `bodyClientWidth=400`、标题未裁切、无横向溢出。
+- 扩展图标按用户指定重新生成：整个底板统一纯白，Notion 标志为黑色，迁移箭头为黑色，DingTalk 标志为蓝色；16/32/48/128 四档均由同一主图生成并检查最小尺寸辨识度。
+- 新增 `npm run check:stage6:ui`，只执行扩展类型检查、5 项扩展测试、构建和 3 项阶段 6 UI/图标/协议静态检查。宽度与图标修正后再次运行通过，没有执行阶段 1–5；专项测试新增固定 400px 最小宽度和禁止 `max-width: 100vw` 的回归约束。`dist/edge-extension` 只包含四个尺寸图标，生成主图保存在 `assets/extension-icon`，不会进入扩展包。
+- 用户认可 400px 版本后继续微调：弹窗主要字号统一增加约 1px；“子页面”从下拉框改为左右并排的原生单选语义，使用圆环加中心点表示选中状态，默认仍为“同页展开”，另一项为“递归文档树”。400×650 定向渲染确认两个选项分别为 132px/164px、切换状态正确且无横向溢出；`npm run check:stage6:ui` 再次通过，未执行阶段 1–5。
+- 用户发现切换到新的 Notion 页面后弹窗仍恢复上一次成功结果。根因是 `chrome.storage.session` 只保存 Native 任务 ID，没有绑定来源页面；现改为保存“任务 ID + 稳定 Notion 页面 ID”，初始化先识别当前页再决定是否恢复。URL 查询参数或 slug 变化不影响同页恢复，页面 ID 不同或非 Notion 页面时不显示旧结果和旧链接；扩展 6 项测试与阶段 6 UI 3 项专项检查通过。
+- 用户指出 Notion 封面被当成普通正文图片导入。已按钉钉文档能力改为原生封面：转换器识别根页面 `page-cover-image`，从 DOCX 正文和正文图片计数中移除，在任务目录暂存并核对大小/SHA-256，导入后调用 `doc +resource-update`，再用 `doc +inspect --include-style` 回读确认；`tree` 模式的每篇独立文档沿用同一单页流程。阶段 2 共 14/14 通过，新增专项还覆盖封面写入回执未知但样式回读已确认的安全收敛，全部封面暂存和 DOCX 均永久清理。
+- 用户真实迁移带封面的“山东自驾（8.18 → 8.22）”时停在 `COVER_NATIVE_RESTORE_FAILED`。只读回查确认正文文档已创建，但样式中没有封面；根因是 DWS `doc +resource-update` 的契约为 `confirmation=user_required`，迁移核心漏传 `--yes`，而 fake dws 又把未确认的调用误判成已写入。生产调用现显式携带 `--yes`，测试替身缺少该参数会返回 `confirmation_required`，专项回归同时断言确认参数、未知回执样式回读和不重复导入。本机安装版已升级；同一 ZIP 再次执行会在原文档上恢复封面，不重新导入正文。
+- 用户要求避免选错导出包，并把选择与转换彻底拆开。Native Messaging v1 新增只读 `migration.inspect`：Native Host 暂存 ZIP 后调用安装版 `n2dd inspect`，只读取包内根页面标题、根 HTML 导出时间和页面数量，响应前永久删除预检副本，不生成 DOCX、不调用 dws、不创建任务。扩展不再用当前页 DOM 标题填表；选择包后展示上述信息并以包内标题填入可编辑标题框，只有用户再次点击“开始转换”才调用 `migration.start`。Host 版本提升为 `0.3.2`；扩展 6/6、Go 全部包、阶段 5 Host 隔离、阶段 6 异步任务和 UI 3/3 专项均通过，未运行阶段 1–4。本机本地核心与 Native Host 已升级，真实健康检查返回 `migration.inspect` 能力、`ready/authenticated/configured=true`；安装版真实 `n2dd inspect` 已识别夹具标题、导出时间和页数，预检目录与核心临时目录均不存在。
+- 用户截图中的 `The message port closed before a response was received.` 已定位为大包扩展内通信问题，而非 ZIP 内容错误或钉钉写入失败：该 ZIP 为 27.93 MiB，Base64 请求约 39.05 MB；同一字节直接经过已安装 Host `migration.inspect` 在 4.6 秒内成功返回《山东自驾（8.18 → 8.22）》、导出时间和 1 页，且未写入钉钉。弹窗现以 512 KiB Base64 分片发送到后台，后台严格核对会话、顺序、分片数与总长度后才调用 Native Host；预检和“开始转换”分别传输，废除两个会再次发送整包的旧扩展消息入口。扩展 7/7 与阶段 6 UI 3/3 定向检查通过，未执行阶段 1–5。
+- 用户调整重复导入策略：不能用旧任务的成功/未知状态锁死操作，也不能静默忽略已有文档。`migration.inspect` 现按 ZIP SHA-256 和当前配置目标扫描最小迁移状态，只返回去重文档数、最新确认成功记录（无成功时返回最新未知记录）、时间、模式和经过白名单验证的钉钉 URL，不返回标题、正文、文件名、目标 ID 或凭据。弹窗显示“此前已导出/此前可能已导出”和真实链接，主按钮改为“仍再次导出/再次导出为新文档”；点击即发送 `createNew=true`，Host 调用安装版 CLI `--force`，明确忽略旧的成功/未知远端状态并创建新文档，但仍不绕过本地垃圾清理失败。旧任务轮询回包只有在 taskId 仍为当前活动任务时才能渲染，修复重新选包后旧黄色卡片覆盖新界面的竞态。Host 版本提升为 `0.3.3`。
+- 重复导入策略已完成定向验证：Go 全部包、扩展 7/7、阶段 5 Native Host 隔离、阶段 6 的 4 项任务/UI 测试通过；阶段 2 两个专项确认 `--force` 在结构化和非 JSON 写入未知后都会再次调用导入。当前用户本地核心和 Host 0.3.3 已升级；对真实 27.93 MiB“山东自驾”ZIP 的只读预检返回 `previousExport.status=success`、3 个去重历史文档和真实链接 <https://alidocs.dingtalk.com/i/nodes/Qnp9zOoBVBlpyeeQIeoYeXpM81DK0g6l>，预检目录、Native 任务目录、仓库 `artifacts` 与 `.n2dd-tmp` 均为空。
+- 用户于 2026-08-28 确认阶段 6 可以正式完成。真实使用已覆盖包内标题/导出时间预检、选择与转换两步操作、历史导出链接提示、允许再次导出、任务进度与结果链接、页面间结果隔离、原生封面和最终弹窗 UI；阶段状态切换为“阶段 7 — 打包与发布（待开始）”。
+- 用户确认阶段 7 采用“Edge Add-ons 安装扩展 → 扩展提示下载并运行一次 Windows 本地助手 → 首次完成钉钉登录和保存位置 → 日常只使用 Edge 扩展”的两步首次安装方案。扩展新增本地助手安装/升级面板；健康检查现在区分未安装、Host/Core 版本过低、必需能力缺失和仅未登录/未配置四类状态。
+- 扩展固定最低兼容版本为 Host `0.3.3`、本地核心 `0.1.0`，并逐项检查 `health.check`、`local.open`、预检、任务启动、状态与取消能力；未安装时链接 GitHub Release 的 `Notion2DingDing-Setup.exe`，不兼容时显示“下载最新版”。扩展专项为 8/8、阶段 6 UI 为 3/3 通过。
+- 新增统一发布安装核心 `scripts/install-release.ps1` 和单文件 Go 引导安装器：默认在当前用户范围检测并通过 winget/npm 安装 Node.js 24+、Pandoc 3+、dws 1.0.59，再安装或升级本地核心及 Native Messaging Host；安装后提示重启 Edge，卸载继续执行所有权标记校验。发布包还提供可审计 ZIP 和双击 CMD 入口。
+- 新增 `scripts/build-release.ps1`：用固定白名单生成 Edge Add-ons ZIP、`Notion2DingDing-Setup.exe`、备用安装 ZIP、SHA-256、发布清单、隐私说明、第三方组件说明和安装文档。当前 `0.1.0` 候选包位于 `dist/release/v0.1.0`；商店正式 CRX ID写入后清单为 `edgeSubmissionReady=true`、`codeSigned=false`，不会把未签名安装器误报为已签名。
+- Native Host 安装器支持同时写入固定开发扩展 ID和 Edge Add-ons 正式 ID；发布构建在提供 `-PublishedExtensionId` 后才标记商店提交就绪。阶段 7 隔离测试使用临时正式 ID验证两个 `allowed_origins`，并在临时 Windows 用户目录真实完成单文件 EXE 安装、核心/Host/启动器核对、卸载和路径不存在检查，没有修改当前用户真实安装或注册表。
+- 新增 `PRIVACY.md`、`THIRD_PARTY_NOTICES.md`、正式版安装说明和 Edge 商店提交文案；内容明确本地处理、用户主动向钉钉写入、无项目中转服务器/广告/分析/遥测、最小状态和永久清理规则，并逐项解释 `activeTab`、`scripting`、`nativeMessaging`、`storage` 权限。
+- 新增 GitHub Actions `release-candidate.yml`：标签或人工触发时执行发布级回归、构建候选包、阶段 7 隔离安装验收并上传候选产物，但不会自动创建 GitHub Release 或提交 Edge Add-ons。`npm run check:stage7` 已在本机通过：扩展 8/8、阶段 6 UI 3/3、全部 Go 包及阶段 7 Edge 包/安装卸载/正式 ID/校验和/隐私与清理均成功。
+- Microsoft Partner Center 已完成个人开发者验证并显示 `Authorized`；已创建 Notion2DingDing 草稿、上传通过验证的 0.1.0 商店 ZIP，并取得 Microsoft Store ID `0RDCKDHG1ZBN`、CRX ID `pgjapgiiikkdkmcjmahnggdbfglfihbp`、Product ID `1e239b11-c948-4f7d-a28d-4e39c7d09dc3`。商店简体中文说明、图标、权限/隐私表单已保存完成，尚未提交审核。
+- 本机安装版本地核心已执行 `npm run upgrade:local`，诊断六项全部 `ready: true`；Native Host 和注册信息未修改。封面能力来自已安装 DWS 的官方文档资源 shortcut，未自行猜测私有接口。
+- 当前 Windows 用户的本地工具和 Native Host 已在上述全量回归后分别通过 `npm run upgrade:local`、`npm run upgrade:native` 升级；正常用户权限下 `npm run doctor:native` 返回 Host `0.3.1`、`ready: true`、`authenticated: true`、`configured: true`，保存位置仍为“Notion2DingDing 验证输出”。仓库 `artifacts` 与 `.n2dd-tmp` 均不存在。
+- 当前 Windows 用户的本地核心和 Native Host 已升级；安装版迁移核心包含当前任务身份版本（`inline=8`、单页/递归节点 `=9`）、`restoreNativeSubpageToc` 与原生封面恢复。正常用户权限下真实健康检查返回 Host `0.3.1`、`windows/amd64`、`ready: true`、`authenticated: true`、`configured: true`，保存位置仍为“Notion2DingDing 验证输出”。
 - 阶段 3 真实迁移文档为 <https://alidocs.dingtalk.com/i/nodes/R1zknDm0WR1PzkkLUz5vz6vw8BQEx5rG>。服务端回读确认父、子、孙页面末尾标记齐全，Callout、展开后的 Toggle、数据库降级提示均存在，两张图片均为钉钉 `alidocs2` 资源，且无 Notion 图片地址或额外 SVG 图片。
 - 阶段 3 真实迁移报告核对为 3 个文档、2 个子页面、2 个源图片引用、2 个本地文件、2 个去重资源、2 个 DOCX 媒体和 2 个远端图片；相同命令复跑返回 `reused: true`，未重复创建文档。
 - `docs/content-mapping.md` 已记录支持范围、特殊结构映射、降级边界和不支持项。
@@ -333,13 +498,22 @@ Windows 本地迁移工具（当前主线）
 
 尚未验证：
 
-- 当前开发机尚未安装 Go，已有 Go 代码没有完成本机构建与测试。
-- Edge 扩展尚未在 `edge://extensions` 加载，Native Messaging 真实链路尚未打通；这些工作已后置到阶段 5。
+- Microsoft Edge Add-ons 草稿和商店正式标识已经取得，扩展 ZIP 已通过上传验证；尚未点击“发布”提交审核，也尚未获得公开商店 URL。
+- `Notion2DingDing-Setup.exe` 当前未做 Authenticode 代码签名；用户于 2026-08-28 明确选择先发布未签名 v0.1.0。扩展、README、安装文档和发布说明必须一致提示：仅从官方 GitHub Release 下载并核对 SHA-256 后，才可按“更多信息 → 仍要运行”继续。后续版本再接入受信任的代码签名。
+- 本仓库尚未由项目所有者指定开源许可证；当前依法保留全部权利，不授予第三方复制、修改或再分发源码的许可。第三方组件许可证清单已经完成。
+- 阶段 7 安装器已在隔离临时目录完成真实安装/卸载，但尚未在一台干净 Windows 10/11 用户环境完成联网依赖安装、Edge 商店扩展、钉钉登录、真实迁移、重启、升级和卸载的最终闭环。
+- 新增“递归文档树”已通过 Drive/Wiki 隔离端到端回归，但尚未用用户的真实复杂 Notion HTML ZIP 在钉钉创建整棵目录树并人工核对层级、页面间跳转和二次执行复用；完成前不把这项能力报告为真实钉钉验收完成。
+- 已修复的“260417 FPGA（VP1902）对接”已通过服务端完整结构回读；仍需用户刷新或重新打开文档，实际点击原生“子页面”目录中的 5 项，确认 Web/App 均滚动到对应章节，同时确认 4 个书签的链接/文字可用，并接受未随导出包提供的 6 张站点图标/缩略图不显示。
+- 单图去表格已通过用户真实 ZIP 的本地 DOCX OOXML 审计；原生分栏已在用户真实山东文档原地恢复并通过服务端独立回读，仍需用户打开该文档确认最终视觉符合预期。
+- 标题去重已通过 DOCX OOXML 与全套自动化验收，但尚未用用户截图对应的真实 HTML ZIP 新建钉钉文档并人工确认页面顶部只显示一次文档标题；旧文档没有被自动修改。
+- 新增代码块原生化已经通过脱敏 fake dws 回归，并用用户真实旧文档只读确认了可原位替换的块形态；尚未用用户真实 HTML ZIP 新建一份钉钉文档并人工确认原生代码块的视觉与编辑体验。旧文档没有被本轮自动修改。
 
 下一步：
 
-1. 用户在下一次真实迁移前运行 `dws auth login`，并按实际目标选择是否用 `n2dd config` 保存默认 folder/workspace。
-2. 用户确认继续阶段 5 后，编译 Native Host，让 Edge 弹窗通过版本化 Native Messaging 调用已安装的同一迁移核心。
+1. 为未签名 v0.1.0 补齐 SmartScreen、SHA-256 和官方来源提示，重新执行发布级构建、安装/卸载与内容审计。
+2. 创建 GitHub v0.1.0 Release，上传安装器、备用包、校验和、隐私与第三方组件说明，并验证扩展内下载链接可用。
+3. 在 Microsoft Partner Center 提交已经完成资料和正式 CRX ID配置的 Edge Add-ons 草稿审核，记录审核状态。
+4. 后续版本再确定 Windows 安装器代码签名证书/主体，并在干净 Windows 10/11 环境补做签名版升级闭环。
 
 ## 进度维护规则
 
