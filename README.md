@@ -28,9 +28,9 @@ Notion2DingDing 是一个面向 Windows 的 Notion → 钉钉文档迁移工具�
 3. 安装完成后完全关闭并重新打开 Edge。
 4. 打开扩展，完成一次钉钉登录并选择默认保存位置。
 
-Edge 扩展当前正在 Microsoft 审核；正式上架后将在这里补充商店直达链接。本地助手也可以从 [GitHub Releases](https://github.com/LeonZ03/Notion2DingDing/releases) 下载。
+[Edge 商店安装](https://microsoftedge.microsoft.com/addons/detail/pgjapgiiikkdkmcjmahnggdbfglfihbp) · [本地助手一键下载](https://notion2dingding.leonz03.dpdns.org/downloads/Notion2DingDing-Setup.exe)。安装器及 Node.js、Pandoc、dws 组件均由项目下载站提供，用户安装时无需访问 GitHub。
 
-v0.1.0 的 Windows 安装器尚未进行代码签名，SmartScreen 可能提示“Windows 已保护你的电脑”。请只从本项目 GitHub Release 下载，核对同页 `checksums.sha256` 后选择“更多信息 → 仍要运行”。
+Windows 安装器尚未进行代码签名，SmartScreen 可能提示“Windows 已保护你的电脑”。请从项目下载站获取，核对[校验和](https://notion2dingding.leonz03.dpdns.org/downloads/checksums.sha256)后选择“更多信息 → 仍要运行”。
 
 ### 迁移文档
 

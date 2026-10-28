@@ -13,6 +13,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+$domesticInstallerFix = '重新运行项目安装器：https://notion2dingding.leonz03.dpdns.org/downloads/Notion2DingDing-Setup.exe'
 
 function Resolve-ToolCommand {
     param([Parameter(Mandatory)][string]$Command)
@@ -134,10 +135,10 @@ if ($pandocPath) {
     $pandocMajor = if ($pandocMatch.Success) { [int]$pandocMatch.Groups[1].Value } else { 0 }
     $pandocReady = $pandocResult.ExitCode -eq 0 -and $pandocMajor -ge 3
     $pandocMessage = if ($pandocReady) { 'Pandoc 版本满足要求。' } else { 'Pandoc 版本过低或无法识别，需要 3 或更高版本。' }
-    Add-Check -Checks $checks -Name 'pandoc' -Ready $pandocReady -Message $pandocMessage -Detected $pandocFirstLine -Required 'Pandoc 3+' -Fix 'winget install JohnMacFarlane.Pandoc'
+    Add-Check -Checks $checks -Name 'pandoc' -Ready $pandocReady -Message $pandocMessage -Detected $pandocFirstLine -Required 'Pandoc 3+' -Fix $domesticInstallerFix
 }
 else {
-    Add-Check -Checks $checks -Name 'pandoc' -Ready $false -Message '未找到 Pandoc。' -Required 'Pandoc 3+' -Fix 'winget install JohnMacFarlane.Pandoc'
+    Add-Check -Checks $checks -Name 'pandoc' -Ready $false -Message '未找到 Pandoc。' -Required 'Pandoc 3+' -Fix $domesticInstallerFix
 }
 
 $configuredProfile = ''

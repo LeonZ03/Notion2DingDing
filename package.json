@@ -1,6 +1,6 @@
 {
   "name": "notion2dingding",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "engines": {
@@ -8,6 +8,9 @@
     "npm": ">=11"
   },
   "scripts": {
+    "build:downloads": "node scripts/build-download-site.mjs",
+    "test:downloads": "node --test tests/downloads/*.test.mjs",
+    "deploy:downloads": "npm run build:release && npm run build:downloads && wrangler deploy --config cloud/downloads/wrangler.jsonc",
     "build": "npm run build:extension",
     "build:extension": "tsc -p apps/edge-extension/tsconfig.json && node scripts/copy-extension-assets.mjs",
     "build:native": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-native-host.ps1",
@@ -49,6 +52,7 @@
   },
   "devDependencies": {
     "@types/chrome": "^0.1.31",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "wrangler": "4.154.0"
   }
 }

@@ -4,7 +4,7 @@
 
 1. 从 Microsoft Edge Add-ons 获取 Notion2DingDing 扩展。
 2. 第一次打开扩展时，如果本地助手未安装，点击“下载并安装”。
-3. 运行 `Notion2DingDing-Setup.exe`。安装器会在当前 Windows 用户范围内安装本地迁移核心和 Native Messaging Host，并在缺少时通过 winget/npm 安装固定版本的 Node.js、Pandoc 和钉钉官方 dws。
+3. 运行 `Notion2DingDing-Setup.exe`。安装器会在当前 Windows 用户范围内安装本地迁移核心和 Native Messaging Host；缺少的 Node.js 24.16.0、Pandoc 3.11 和钉钉官方 dws 1.0.59 均从项目下载站获取，并逐个校验 SHA-256。安装取包不依赖用户访问 GitHub、winget 或 npm。
 4. 完全关闭并重新打开 Edge。
 5. 打开扩展，按提示完成一次钉钉登录和保存位置选择。
 6. 本地核心变为绿色后，日常迁移只需使用 Edge 扩展。
@@ -15,7 +15,7 @@ Edge 官方明确说明 Native Messaging 本机程序不由 Edge 安装或管理
 
 首个公开版本的 `Notion2DingDing-Setup.exe` 暂未进行 Authenticode 代码签名。Windows 或 Edge SmartScreen 可能显示“Windows 已保护你的电脑”或阻止不常见下载。这不影响 Edge 商店扩展本身；Edge Add-ons 会对扩展包执行自己的签名与审核。
 
-仅当安装包来自本项目官方 GitHub Release，并且 SHA-256 与同一发布页的 `checksums.sha256` 一致时继续：
+从[项目下载站](https://notion2dingding.leonz03.dpdns.org/)获取安装器，并核对同站的 `downloads/checksums.sha256` 后继续：
 
 1. 在 Windows 提示中选择“更多信息”。
 2. 确认应用名称为 `Notion2DingDing-Setup.exe`。
@@ -50,6 +50,8 @@ Get-FileHash .\Notion2DingDing-Setup.exe -Algorithm SHA256
 发布包的备用 ZIP 中提供 `scripts\Uninstall-Notion2DingDing.cmd`。它只删除带有本项目所有权标记的本地核心、Native Host、配置、最小状态、启动器和当前用户注册项；不会删除用户提供的 Notion ZIP 或已经创建的钉钉文档。
 
 Edge 扩展需要在 `edge://extensions` 或 Edge Add-ons 页面单独卸载。
+
+也可通过 `Notion2DingDing-Setup.exe -Action Uninstall` 卸载项目主体。共享依赖和项目下载的 Node.js / Pandoc / dws 暂时保留；当前卸载不会自动删除这些依赖及 dws 登录状态。
 
 ## 当前限制
 

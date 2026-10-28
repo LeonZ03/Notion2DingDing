@@ -1,0 +1,17 @@
+{
+  "$schema": "https://schemas.cloudflare.com/wrangler/config-schema.json",
+  "name": "notion2dingding-downloads",
+  "main": "worker.mjs",
+  "account_id": "2209b66b760f975189ff9bf255195e6b",
+  "compatibility_date": "2026-10-01",
+  "workers_dev": false,
+  "preview_urls": false,
+  "observability": { "enabled": false },
+  "send_metrics": false,
+  "routes": [{ "pattern": "notion2dingding.leonz03.dpdns.org", "custom_domain": true }],
+  "assets": {
+    "directory": "../../dist/download-site/public",
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/*", "/downloads/*"]
+  }
+}

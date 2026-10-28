@@ -27,7 +27,7 @@ Notion2DingDing 帮助 Windows 用户把 Notion 页面迁移为可继续编辑�
 
 ## 远程代码
 
-不使用远程托管 JavaScript、WebAssembly 或动态下载执行代码。GitHub Release 链接只用于由用户主动下载 Windows 本地助手。
+扩展不使用远程托管 JavaScript、WebAssembly 或动态下载执行代码。项目下载站链接仅用于由用户主动下载 Windows 本地助手；本地安装器会获取固定版本组件并校验 SHA-256，扩展本身不会执行这些下载文件。
 
 ## 数据披露摘要
 
@@ -35,6 +35,6 @@ Notion2DingDing 帮助 Windows 用户把 Notion 页面迁移为可继续编辑�
 
 ## 审核测试备注
 
-该扩展依赖 Windows Native Messaging Host。审核人员可先安装 GitHub Release 中的 `Notion2DingDing-Setup.exe`，完全重启 Edge 后打开扩展。v0.1.0 安装器暂未进行 Authenticode 签名；请先用同一 Release 的 `checksums.sha256` 核对文件，再在 SmartScreen 中选择“更多信息 → 仍要运行”。若没有钉钉授权，仍可验证本地助手连接、版本兼容检查、Notion 页面识别和安装/升级引导；真实迁移需要审核账号能够登录钉钉并选择有写入权限的目标文件夹。
+该扩展依赖 Windows Native Messaging Host。审核人员可从 https://notion2dingding.leonz03.dpdns.org/downloads/Notion2DingDing-Setup.exe 安装本地助手，再重新打开扩展。安装器暂未进行 Authenticode 签名；请先用同站 downloads/checksums.sha256 核对文件，再在 SmartScreen 中选择“更多信息 → 仍要运行”。若没有钉钉授权，仍可验证本地助手连接、版本兼容检查、Notion 页面识别和安装/升级引导；真实迁移需要审核账号能够登录钉钉并选择有写入权限的目标文件夹。
 
 最终 Windows 安装包已经把 Microsoft Edge Add-ons 分配的 CRX ID `pgjapgiiikkdkmcjmahnggdbfglfihbp` 写入 Native Host `allowed_origins`，并保留固定开发 ID供本地调试。

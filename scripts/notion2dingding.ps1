@@ -11,6 +11,19 @@ $ownershipId = 'com.leonz03.notion2dingding.cli'
 $programDirectory = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $manifestPath = Join-Path $programDirectory '.n2dd-install.json'
 
+# Edge 可能还持有安装前的 PATH；每次调用从当前用户 PATH 与受管理依赖恢复环境。
+$machinePath = [Environment]::GetEnvironmentVariable('Path', 'Machine')
+$userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+$env:Path = "$userPath;$machinePath;$env:Path"
+foreach ($dependency in @('Node\24.16.0', 'Pandoc\3.11', 'Dws\1.0.59')) {
+    $dependencyDirectory = Join-Path $env:LOCALAPPDATA "Programs\Notion2DingDingDependencies\$dependency"
+    $markerPath = Join-Path $dependencyDirectory '.n2dd-dependency.json'
+    if (Test-Path -LiteralPath $markerPath -PathType Leaf) {
+        $marker = Get-Content -LiteralPath $markerPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        if ($marker.owner -eq 'Notion2DingDing') { $env:Path = "$dependencyDirectory;$env:Path" }
+    }
+}
+
 function Write-Result {
     param([Parameter(Mandatory)]$Value)
     $Value | ConvertTo-Json -Depth 6

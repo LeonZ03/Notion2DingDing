@@ -75,7 +75,7 @@ test("release compatibility distinguishes install, upgrade and ready states", ()
   assert.equal(isVersionAtLeast("0.3.3", "0.3.3"), true);
   assert.equal(isVersionAtLeast("0.4.0", "0.3.3"), true);
   assert.equal(isVersionAtLeast("0.3.2", "0.3.3"), false);
-  assert.match(INSTALLER_URL, /releases\/latest\/download\/Notion2DingDing-Setup\.exe$/u);
+  assert.equal(INSTALLER_URL, "https://notion2dingding.leonz03.dpdns.org/downloads/Notion2DingDing-Setup.exe");
 
   const base = {
     hostVersion: "0.3.3",

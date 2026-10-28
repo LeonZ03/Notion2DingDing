@@ -231,7 +231,7 @@ try {
     )
     Assert-True -Condition ($missingDoctor.ready -eq $false) -Message '依赖全缺失时 doctor 不得报告就绪。'
     Assert-True -Condition ($missingDoctor.fixes -contains 'winget install OpenJS.NodeJS') -Message '缺少 Node.js 时未给出安装命令。'
-    Assert-True -Condition ($missingDoctor.fixes -contains 'winget install JohnMacFarlane.Pandoc') -Message '缺少 Pandoc 时未给出安装命令。'
+    Assert-True -Condition ($missingDoctor.fixes -contains '重新运行项目安装器：https://notion2dingding.leonz03.dpdns.org/downloads/Notion2DingDing-Setup.exe') -Message '缺少 Pandoc 时未给出项目安装器修复入口。'
     Assert-True -Condition ($missingDoctor.fixes -contains 'npm install -g dingtalk-workspace-cli@1.0.59') -Message '缺少 dws 时未给出安装命令。'
     Assert-True -Condition ($missingDoctor.fixes -contains 'dws auth login') -Message '缺少登录状态时未给出登录命令。'
 

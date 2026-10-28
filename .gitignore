@@ -3,6 +3,7 @@ dist/
 coverage/
 artifacts/
 .n2dd-tmp/
+.wrangler/
 *.log
 
 .idea/

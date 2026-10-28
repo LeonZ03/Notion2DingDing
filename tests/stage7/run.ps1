@@ -7,6 +7,7 @@ $repositoryRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
 $powershellPath = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
 $testRoot = Join-Path $env:TEMP ("notion2dingding-stage7-test-" + [Guid]::NewGuid().ToString('N'))
 $publishedExtensionId = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+$version = (Get-Content -LiteralPath (Join-Path $repositoryRoot 'package.json') -Raw | ConvertFrom-Json).version
 
 function Assert-True {
     param([Parameter(Mandatory)][bool]$Condition, [Parameter(Mandatory)][string]$Message)
@@ -29,7 +30,7 @@ try {
         -PublishedExtensionId $publishedExtensionId
     if ($LASTEXITCODE -ne 0) { throw "发布包构建失败：exit=$LASTEXITCODE" }
 
-    $releaseDirectory = Join-Path $outputRoot 'v0.1.0'
+    $releaseDirectory = Join-Path $outputRoot "v$version"
     $releaseManifestPath = Join-Path $releaseDirectory 'release-manifest.json'
     Assert-True -Condition (Test-Path -LiteralPath $releaseManifestPath -PathType Leaf) -Message '缺少 release-manifest.json。'
     $releaseManifest = Get-Content -LiteralPath $releaseManifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -38,7 +39,7 @@ try {
     Assert-True -Condition ($releaseManifest.codeSigned -eq $false) -Message '未签名候选包不得误报已签名。'
 
     Add-Type -AssemblyName System.IO.Compression.FileSystem
-    $extensionZip = Join-Path $releaseDirectory 'Notion2DingDing-Edge-v0.1.0.zip'
+    $extensionZip = Join-Path $releaseDirectory "Notion2DingDing-Edge-v$version.zip"
     $archive = [IO.Compression.ZipFile]::OpenRead($extensionZip)
     try {
         $entries = @($archive.Entries | ForEach-Object { $_.FullName.Replace('\', '/') })
@@ -74,7 +75,7 @@ try {
     Assert-True -Condition ($installationGuide.Contains('更多信息')) -Message '未签名 v0.1.0 缺少 SmartScreen 操作说明。'
     Assert-True -Condition ($installationGuide.Contains('checksums.sha256')) -Message '未签名安装说明缺少 SHA-256 核对入口。'
     $popupMarkup = Get-Content -LiteralPath (Join-Path $repositoryRoot 'dist\edge-extension\popup.html') -Raw -Encoding UTF8
-    Assert-True -Condition ($popupMarkup.Contains('v0.1.0 安装包暂未签名')) -Message '扩展安装引导未提示 v0.1.0 安装包未签名。'
+    Assert-True -Condition ($popupMarkup.Contains('安装包暂未签名')) -Message '扩展安装引导未提示安装包未签名。'
 
     $installRoot = Join-Path $testRoot 'installed'
     $local = Join-Path $installRoot 'Programs\Core'

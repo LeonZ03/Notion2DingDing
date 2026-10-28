@@ -2,8 +2,8 @@ import type { HealthResult } from "./protocol.js";
 
 export const MINIMUM_HOST_VERSION = "0.3.3";
 export const MINIMUM_LOCAL_TOOL_VERSION = "0.1.0";
-export const RELEASES_URL = "https://github.com/LeonZ03/Notion2DingDing/releases/latest";
-export const INSTALLER_URL = `${RELEASES_URL}/download/Notion2DingDing-Setup.exe`;
+export const RELEASES_URL = "https://notion2dingding.leonz03.dpdns.org/";
+export const INSTALLER_URL = `${RELEASES_URL}downloads/Notion2DingDing-Setup.exe`;
 
 const requiredCapabilities = [
   "health.check",

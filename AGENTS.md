@@ -302,9 +302,20 @@ Windows 本地迁移工具（当前主线）
 
 ## 当前进展
 
-最后更新：2026-08-28
+最后更新：2026-10-28
 
 当前阶段：阶段 7 — 打包与发布（进行中）
+
+本轮发布更新（2026-10-28）：
+
+- 用户授权参考 Whisper，把下载分发迁移至独立 Cloudflare Worker `notion2dingding-downloads` 和 `notion2dingding.leonz03.dpdns.org`，并更新 Edge 下载入口。复用 Workers Static Assets + 8 MiB SHA-256 分片流式合并，支持 GET/HEAD 和单段 Range；没有引入 R2、数据库或付费套餐变更，也没有修改 Whisper 的云资源。
+- 已部署 Cloudflare 版本 `8385bdf8-36e1-4d54-9ddc-a12d657844df`，正式 `/api/health` 返回 `0.1.1`。安装器 SHA-256 为 `e4853bdc7fa7ae6514b577e1faa6bb7dfac25a2e7b6debee4d6f4b2a9b3a84c6`。公开文件清单及所有校验值以下载站 `release-manifest.json` / `downloads/checksums.sha256` 为准。
+- `node scripts/verify-download-site.mjs` 已分两批完成 12 个线上公开文件的完整下载，大小及 SHA-256 与本地清单一致，无重定向；跨 8 MiB 分片的 Range 响应为 206 且字节匹配。第一次校验因文本自动 gzip 不携带 Content-Length 被校验器误拒绝，按实际解压后字节数修正校验器后，剩余 6 项及 Range 均通过；线上文件本身没有改动。
+- 首次安装的 Node.js 24.16.0、Pandoc 3.11 和 dws 1.0.59 均通过项目下载站获取；Node 官方 ZIP 校验和、dws 官方 npm 内置 Windows ZIP 校验和已核对，发布构建会在哈希不一致时拒绝。安装后保留上游许可证；站点提供对应 Pandoc 源码归档。
+- Edge / 项目版本升级为 0.1.1，下载按钮直达同域 EXE，版本说明也使用项目站。隐藏 PowerShell 原生下载字节进度，CLI 从当前用户 PATH 和受管理依赖恢复环境，降低旧 Edge 进程环境造成的假未就绪。
+- `npm run check:all`、`npm run test:stage7`、`npm run test:downloads`（9 项）通过；真实 Node/Pandoc/dws 在隔离用户目录完成解包、版本校验、复用、坏哈希拒绝和非项目目录保护测试，未写宿主 PATH/注册表。Wrangler 锁定 4.154.0，安装时 npm audit 为 0 个漏洞。
+- 已生成 `dist/release/v0.1.1/Notion2DingDing-Edge-v0.1.1.zip`；商店后台当前停在 Microsoft 服务协议更新页面。自动审批拒绝代点“下一步”，需用户本人处理该协议/登录后继续上传及提交审核。不能把源码或下载站部署完成当成 Edge 商店更新已发布。
+- 国内速度仍需实验电脑实际验证；现有卸载保留 Node/Pandoc/dws 和 dws 登录状态，文档已如实说明。首次完整联网安装与真实迁移的另一台 Windows 验收仍待用户确认。
 
 当前开发原则：阶段 6 已由用户真实验收完成；阶段 7 以版本冻结、可审阅候选包、权限/隐私/许可证文档、发布验证和干净 Windows 验收为主，不再追加非发布必需的新功能。先在本地形成并验证候选包；任何 Edge Add-ons 提交、GitHub Release 发布或会影响外部账号的操作都需先获得用户确认。
 
@@ -500,7 +511,7 @@ Windows 本地迁移工具（当前主线）
 
 尚未验证：
 
-- Microsoft Edge Add-ons 草稿和商店正式标识已经取得，扩展 ZIP 已通过上传验证；尚未点击“发布”提交审核，也尚未获得公开商店 URL。
+- 根据用户此前提供的 Partner Center Live 截图，v0.1.0 已上架；0.1.1 的项目下载站入口更新包已构建，尚未提交本次商店审核。
 - `Notion2DingDing-Setup.exe` 当前未做 Authenticode 代码签名；用户于 2026-08-28 明确选择先发布未签名 v0.1.0。扩展、README、安装文档和发布说明必须一致提示：仅从官方 GitHub Release 下载并核对 SHA-256 后，才可按“更多信息 → 仍要运行”继续。后续版本再接入受信任的代码签名。
 - 本仓库尚未由项目所有者指定开源许可证；当前依法保留全部权利，不授予第三方复制、修改或再分发源码的许可。第三方组件许可证清单已经完成。
 - 阶段 7 安装器已在隔离临时目录完成真实安装/卸载，但尚未在一台干净 Windows 10/11 用户环境完成联网依赖安装、Edge 商店扩展、钉钉登录、真实迁移、重启、升级和卸载的最终闭环。
@@ -512,10 +523,9 @@ Windows 本地迁移工具（当前主线）
 
 下一步：
 
-1. 推送阶段 2 CI 用例修复，把尚未创建 GitHub Release 的 v0.1.0 标签更新到修复提交，并等待主 CI 与发布候选工作流通过。
-2. 创建 GitHub v0.1.0 Release，上传安装器、备用包、校验和、隐私与第三方组件说明，并验证扩展内下载链接可用。
-3. 在 Microsoft Partner Center 提交已经完成资料和正式 CRX ID配置的 Edge Add-ons 草稿审核，记录审核状态。
-4. 后续版本再确定 Windows 安装器代码签名证书/主体，并在干净 Windows 10/11 环境补做签名版升级闭环。
+1. 用户处理 Microsoft 新协议/登录后，在 Partner Center 上传并提交 0.1.1 商店更新，核对真实审核状态。
+2. 在实验电脑验证新站直链、首次依赖安装、钉钉登录、插件下载、迁移与重启。
+3. 后续确定代码签名方案，并补充项目管理依赖的卸载清理；共享依赖须继续避免误删。
 
 ## 进度维护规则
 

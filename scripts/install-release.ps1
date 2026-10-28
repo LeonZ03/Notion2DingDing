@@ -24,6 +24,7 @@ $localInstaller = Join-Path $packageRoot 'scripts\install-local-tool.ps1'
 $nativeInstaller = Join-Path $packageRoot 'scripts\install-native-host.ps1'
 $hostExe = Join-Path $packageRoot 'dist\native-host\notion2dingding-host.exe'
 $releaseConfigPath = Join-Path $packageRoot 'release-config.json'
+$downloadOrigin = 'https://notion2dingding.leonz03.dpdns.org'
 $publishedExtensionId = ''
 if (Test-Path -LiteralPath $releaseConfigPath -PathType Leaf) {
     try {
@@ -83,42 +84,125 @@ function Test-DwsVersion {
     return $version -match 'v1\.0\.59(?:\D|$)'
 }
 
-function Install-WingetPackage {
-    param(
-        [Parameter(Mandatory)][string]$Id,
-        [Parameter(Mandatory)][string]$Label
-    )
-    $winget = Resolve-CommandPath -Name 'winget.exe'
-    if (-not $winget) {
-        throw "缺少 Windows Package Manager，无法自动安装 $Label。请先从 Microsoft Store 安装‘应用安装程序’。"
+function Add-UserPathEntry {
+    param([Parameter(Mandatory)][string]$Directory)
+
+    $resolvedDirectory = [IO.Path]::GetFullPath($Directory).TrimEnd('\')
+    $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+    $entries = @($userPath -split ';' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    $alreadyPresent = $false
+    foreach ($entry in $entries) {
+        try {
+            if ([IO.Path]::GetFullPath($entry).TrimEnd('\').Equals($resolvedDirectory, [StringComparison]::OrdinalIgnoreCase)) {
+                $alreadyPresent = $true
+                break
+            }
+        }
+        catch {
+            # 保留用户 PATH 中无法解析的既有条目，不让它阻断安装。
+        }
     }
-    Write-Step "正在安装 $Label…"
-    & $winget install --id $Id --exact --source winget --scope user --silent --accept-package-agreements --accept-source-agreements
-    if ($LASTEXITCODE -ne 0) {
-        throw "$Label 安装失败（winget exit=$LASTEXITCODE）。"
+    if (-not $alreadyPresent) {
+        $updated = (@($resolvedDirectory) + $entries) -join ';'
+        [Environment]::SetEnvironmentVariable('Path', $updated, 'User')
     }
     Refresh-ProcessPath
+    $env:Path = "$resolvedDirectory;$env:Path"
+}
+
+function Install-MirroredDependency {
+    param(
+        [Parameter(Mandatory)][string]$Name,
+        [Parameter(Mandatory)][string]$Version,
+        [Parameter(Mandatory)][string]$ArchiveName,
+        [Parameter(Mandatory)][string]$Sha256,
+        [Parameter(Mandatory)][string]$Executable,
+        [Parameter(Mandatory)][string]$VersionPattern
+    )
+    $installDirectory = [IO.Path]::GetFullPath((Join-Path $env:LOCALAPPDATA "Programs\Notion2DingDingDependencies\$Name\$Version"))
+    $dependencyRoot = Split-Path -Parent $installDirectory
+    $ownerMarker = Join-Path $installDirectory '.n2dd-dependency.json'
+    if (Test-Path -LiteralPath $installDirectory) {
+        if (-not (Test-Path -LiteralPath $ownerMarker -PathType Leaf)) {
+            throw "依赖目录没有本项目所有权标记，已停止覆盖：$installDirectory"
+        }
+        $owner = Get-Content -LiteralPath $ownerMarker -Raw -Encoding UTF8 | ConvertFrom-Json
+        if ($owner.owner -ne 'Notion2DingDing' -or $owner.sha256 -ne $Sha256) {
+            throw "依赖目录所有权或版本校验失败：$installDirectory"
+        }
+        $existingExe = Join-Path $installDirectory $Executable
+        if ((Test-Path -LiteralPath $existingExe -PathType Leaf) -and ((& $existingExe --version | Out-String) -match $VersionPattern)) {
+            Add-UserPathEntry -Directory $installDirectory
+            return
+        }
+    }
+
+    $tempRoot = Join-Path ([IO.Path]::GetTempPath()) ("notion2dingding-dependency-" + [guid]::NewGuid().ToString('N'))
+    $archivePath = Join-Path $tempRoot 'dependency.zip'
+    $expandPath = Join-Path $tempRoot 'expanded'
+    $stagingPath = "$installDirectory.staging-" + [guid]::NewGuid().ToString('N')
+
+    try {
+        Write-Step "正在下载安装 $Name $Version（项目下载源）…"
+        New-Item -ItemType Directory -Path $tempRoot -Force | Out-Null
+        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+        # 隐藏 PowerShell 原生 Web 请求字节输出，只展示可读的安装步骤。
+        $ProgressPreference = 'SilentlyContinue'
+        for ($attempt = 1; $attempt -le 3; $attempt++) {
+            try {
+                Invoke-WebRequest -Uri "$downloadOrigin/downloads/$ArchiveName" -OutFile $archivePath -UseBasicParsing
+                break
+            }
+            catch { if ($attempt -eq 3) { throw } }
+        }
+
+        $actualHash = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.ToUpperInvariant()
+        if ($actualHash -ne $Sha256) {
+            throw "$Name 下载校验失败：期望 $Sha256，实际 $actualHash。"
+        }
+
+        Expand-Archive -LiteralPath $archivePath -DestinationPath $expandPath -Force
+        $executables = @(Get-ChildItem -LiteralPath $expandPath -Filter $Executable -File -Recurse)
+        if ($executables.Count -ne 1) {
+            throw "$Name 压缩包结构无效：应包含 1 个 $Executable。"
+        }
+        $versionOutput = & $executables[0].FullName --version | Out-String
+        if ($LASTEXITCODE -ne 0 -or $versionOutput -notmatch $VersionPattern) { throw "$Name 版本验证失败。" }
+        $payloadDirectory = Split-Path -Parent $executables[0].FullName
+        New-Item -ItemType Directory -Path $dependencyRoot -Force | Out-Null
+        Move-Item -LiteralPath $payloadDirectory -Destination $stagingPath
+        [ordered]@{
+            owner = 'Notion2DingDing'
+            version = $Version
+            source = "$downloadOrigin/downloads/$ArchiveName"
+            sha256 = $Sha256
+        } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $stagingPath '.n2dd-dependency.json') -Encoding UTF8
+
+        if (Test-Path -LiteralPath $installDirectory) {
+            Remove-Item -LiteralPath $installDirectory -Recurse -Force
+        }
+        Move-Item -LiteralPath $stagingPath -Destination $installDirectory
+        Add-UserPathEntry -Directory $installDirectory
+    }
+    finally {
+        if (Test-Path -LiteralPath $stagingPath) {
+            Remove-Item -LiteralPath $stagingPath -Recurse -Force
+        }
+        if (Test-Path -LiteralPath $tempRoot) {
+            Remove-Item -LiteralPath $tempRoot -Recurse -Force
+        }
+    }
 }
 
 function Install-Dependencies {
     if (-not (Test-Node24)) {
-        Install-WingetPackage -Id 'OpenJS.NodeJS' -Label 'Node.js 24+'
+        Install-MirroredDependency -Name 'Node' -Version '24.16.0' -ArchiveName 'node-v24.16.0-win-x64.zip' -Sha256 'EDACA9BD58EC8E92037DAC4E877D52F6B8F430B81C18B57E264B4E2FB111CD56' -Executable 'node.exe' -VersionPattern '^v24\.16\.0\s*$'
     }
     if (-not (Test-Pandoc3)) {
-        Install-WingetPackage -Id 'JohnMacFarlane.Pandoc' -Label 'Pandoc 3+'
+        Install-MirroredDependency -Name 'Pandoc' -Version '3.11' -ArchiveName 'pandoc-3.11-windows-x86_64.zip' -Sha256 '2AB72BAF2399450E148DDF7A2A8689806C42E1BBA71862B57E220FD9B8456D3D' -Executable 'pandoc.exe' -VersionPattern '^pandoc 3\.11\s'
     }
     if (-not (Test-DwsVersion)) {
-        $npm = Resolve-CommandPath -Name 'npm.cmd'
-        if (-not $npm) { $npm = Resolve-CommandPath -Name 'npm' }
-        if (-not $npm) {
-            throw 'Node.js 已安装，但当前终端仍找不到 npm。请重新运行安装包。'
-        }
-        Write-Step '正在安装钉钉官方 dws 1.0.59…'
-        & $npm install --global 'dingtalk-workspace-cli@1.0.59'
-        if ($LASTEXITCODE -ne 0) {
-            throw "dws 安装失败（npm exit=$LASTEXITCODE）。"
-        }
-        Refresh-ProcessPath
+        Install-MirroredDependency -Name 'Dws' -Version '1.0.59' -ArchiveName 'dws-windows-amd64-1.0.59.zip' -Sha256 '5393A0D5E00C70B58833C60610AD3A772926CA5E4EB38C360928E3D2552451BC' -Executable 'dws.exe' -VersionPattern 'v1\.0\.59(?:\D|$)'
     }
 }
 
