@@ -1,6 +1,6 @@
 {
   "name": "notion2dingding",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "type": "module",
   "engines": {
@@ -26,7 +26,7 @@
     "test:stage5": "npm run build:extension && npm run build:native && powershell -NoProfile -ExecutionPolicy Bypass -File tests/stage5/run.ps1",
     "test:stage6": "npm run build:extension && npm run build:native && node --test tests/stage6/*.test.mjs",
     "test:stage6:ui": "npm run build:extension && node --test tests/stage6/extension-ui.test.mjs",
-    "test:stage7": "powershell -NoProfile -ExecutionPolicy Bypass -File tests/stage7/run.ps1",
+    "test:stage7": "powershell -NoProfile -ExecutionPolicy Bypass -File tests/stage7/run.ps1 && powershell -NoProfile -ExecutionPolicy Bypass -File tests/stage7/uninstall.ps1",
     "migrate": "node scripts/migrate-notion-to-dingtalk.mjs",
     "doctor:local": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/diagnose-local-tool.ps1",
     "install:local": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/install-local-tool.ps1 -Action Install",

@@ -7,18 +7,25 @@ param(
     [switch]$SkipDependencyCheck,
     [switch]$SkipRegistry,
     [switch]$Quiet,
+    [switch]$RemoveDingtalkLogin,
+    [switch]$SkipUserPathUpdate,
 
     [string]$LocalInstallDirectory,
     [string]$DataDirectory,
     [string]$LauncherDirectory,
     [string]$StartMenuDirectory,
     [string]$NativeInstallDirectory,
-    [string]$RegistryPath
+    [string]$RegistryPath,
+    [string]$UninstallRegistryPath = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Notion2DingDing',
+    [string]$DependencyDirectory,
+    [string]$DwsCommandPath
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $packageRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
+. (Join-Path $PSScriptRoot 'uninstall-support.ps1')
+if (-not $DependencyDirectory) { $DependencyDirectory = Join-Path $env:LOCALAPPDATA 'Programs\Notion2DingDingDependencies' }
 $powershellPath = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
 $localInstaller = Join-Path $packageRoot 'scripts\install-local-tool.ps1'
 $nativeInstaller = Join-Path $packageRoot 'scripts\install-native-host.ps1'
@@ -246,12 +253,37 @@ foreach ($required in @($localInstaller, $nativeInstaller)) {
 
 try {
     if ($Action -eq 'Uninstall') {
+        if (-not $LocalInstallDirectory) { $LocalInstallDirectory = Join-Path $env:LOCALAPPDATA 'Programs\Notion2DingDing' }
+        if (-not $SkipRegistry) { Assert-N2ddUninstallRegistration -Path $UninstallRegistryPath -InstallDirectory $LocalInstallDirectory }
+        $nativePath = if ($NativeInstallDirectory) { $NativeInstallDirectory } else { Join-Path $env:LOCALAPPDATA 'Programs\Notion2DingDingNativeHost' }
+        $runningHost = @(Get-Process -Name 'notion2dingding-host' -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq (Join-Path $nativePath 'notion2dingding-host.exe') })
+        if ($runningHost.Count) { throw '本地助手仍在运行。请等待迁移结束，完全关闭 Edge 后重新卸载。' }
+        $effectiveData = if ($DataDirectory) { $DataDirectory } else { Join-Path $env:LOCALAPPDATA 'Notion2DingDing' }
+        foreach ($target in @($LocalInstallDirectory, $nativePath, $effectiveData)) { $null = Assert-N2ddDirectory -Path $target }
+        # 在清除登录状态、删除程序之前完成目录安全预检。
+        $null = @(Get-N2ddManagedDependencies -Directory $DependencyDirectory)
+        # 在移除专属 dws 前执行用户明确选择的退出登录，不读取或输出凭据。
+        if ($RemoveDingtalkLogin) {
+            if (-not $DwsCommandPath) {
+                $managedDws = Join-Path $DependencyDirectory 'Dws\1.0.59\dws.exe'
+                if (Test-Path -LiteralPath $managedDws -PathType Leaf) { $DwsCommandPath = $managedDws }
+                else { $DwsCommandPath = Resolve-CommandPath -Name 'dws' }
+            }
+            if (-not $DwsCommandPath) { throw '未找到 dws，无法清除登录状态；可取消该选项后重试卸载。' }
+            $dwsVersion = (& $DwsCommandPath --version 2>$null | Out-String).Trim()
+            if ($LASTEXITCODE -ne 0 -or $dwsVersion -notmatch 'v1\.0\.59(?:\D|$)') { throw 'dws 版本不匹配，未执行退出登录。' }
+            $null = & $DwsCommandPath auth logout 2>&1
+            if ($LASTEXITCODE -ne 0) { throw 'dws 清除登录状态失败，尚未卸载；请检查后重试。' }
+        }
         Write-Step '正在卸载 Native Host…'
         $nativeArguments = [System.Collections.ArrayList]@('-Action', 'Uninstall')
         Add-OptionalArgument -Arguments $nativeArguments -Name '-InstallDirectory' -Value $NativeInstallDirectory
         Add-OptionalArgument -Arguments $nativeArguments -Name '-RegistryPath' -Value $RegistryPath
         if ($SkipRegistry) { [void]$nativeArguments.Add('-SkipRegistry') }
         $nativeResult = Invoke-Installer -Script $nativeInstaller -Arguments @($nativeArguments)
+
+        # 依赖清理失败时保留安装版卸载入口，便于用户修复后重试。
+        $dependenciesResult = Remove-N2ddManagedDependencies -Directory $DependencyDirectory -SkipUserPathUpdate:$SkipUserPathUpdate
 
         Write-Step '正在卸载本地迁移核心…'
         $localArguments = [System.Collections.ArrayList]@('-Action', 'Uninstall')
@@ -261,11 +293,19 @@ try {
         Add-OptionalArgument -Arguments $localArguments -Name '-StartMenuDirectory' -Value $StartMenuDirectory
         $localResult = Invoke-Installer -Script $localInstaller -Arguments @($localArguments)
 
+        if (-not $SkipRegistry -and (Test-Path -LiteralPath $UninstallRegistryPath)) {
+            Assert-N2ddUninstallRegistration -Path $UninstallRegistryPath -InstallDirectory $LocalInstallDirectory
+            Remove-Item -LiteralPath $UninstallRegistryPath -Force
+            if (Test-Path -LiteralPath $UninstallRegistryPath) { throw 'Windows 卸载注册项清理失败。' }
+        }
+
         [ordered]@{
             success = $true
             action = 'uninstall'
             localTool = $localResult
             nativeHost = $nativeResult
+            dependencies = $dependenciesResult
+            dingtalkLoginCleared = [bool]$RemoveDingtalkLogin
         } | ConvertTo-Json -Depth 10
         exit 0
     }
@@ -280,6 +320,7 @@ try {
     if ([string]::IsNullOrWhiteSpace($NativeInstallDirectory)) {
         $NativeInstallDirectory = Join-Path $env:LOCALAPPDATA 'Programs\Notion2DingDingNativeHost'
     }
+    if (-not $SkipRegistry) { Assert-N2ddUninstallRegistration -Path $UninstallRegistryPath -InstallDirectory $LocalInstallDirectory }
     $localAction = if (Test-Path -LiteralPath $LocalInstallDirectory) { 'Upgrade' } else { 'Install' }
     $nativeAction = if (Test-Path -LiteralPath $NativeInstallDirectory) { 'Upgrade' } else { 'Install' }
 
@@ -301,6 +342,11 @@ try {
     Add-OptionalArgument -Arguments $nativeArguments -Name '-AdditionalExtensionId' -Value $publishedExtensionId
     if ($SkipRegistry) { [void]$nativeArguments.Add('-SkipRegistry') }
     $nativeResult = Invoke-Installer -Script $nativeInstaller -Arguments @($nativeArguments)
+
+    $effectiveData = if ($DataDirectory) { $DataDirectory } else { Join-Path $env:LOCALAPPDATA 'Notion2DingDing' }
+    $effectiveLauncher = if ($LauncherDirectory) { $LauncherDirectory } else { Join-Path $env:LOCALAPPDATA 'Microsoft\WindowsApps' }
+    $effectiveStartMenu = if ($StartMenuDirectory) { $StartMenuDirectory } else { Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs' }
+    Install-N2ddUninstallEntry -InstallDirectory $LocalInstallDirectory -DataDirectory $effectiveData -LauncherDirectory $effectiveLauncher -StartMenuDirectory $effectiveStartMenu -NativeInstallDirectory $NativeInstallDirectory -DependencyDirectory $DependencyDirectory -RegistryPath $RegistryPath -UninstallRegistryPath $UninstallRegistryPath -SkipRegistry:$SkipRegistry -SkipUserPathUpdate:$SkipUserPathUpdate
 
     [ordered]@{
         success = $true

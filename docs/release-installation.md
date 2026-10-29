@@ -47,11 +47,22 @@ Get-FileHash .\Notion2DingDing-Setup.exe -Algorithm SHA256
 
 ## 卸载
 
-发布包的备用 ZIP 中提供 `scripts\Uninstall-Notion2DingDing.cmd`。它只删除带有本项目所有权标记的本地核心、Native Host、配置、最小状态、启动器和当前用户注册项；不会删除用户提供的 Notion ZIP 或已经创建的钉钉文档。
+从 0.1.2 起，可以直接在 Windows「设置 → 应用 → 已安装的应用」找到 **Notion2DingDing 本地助手**，点击「卸载」；也可以在开始菜单搜索 **卸载 Notion2DingDing**。无需保留安装器。请等待迁移完成、关闭本地助手和 Edge 后操作。
 
-Edge 扩展需要在 `edge://extensions` 或 Edge Add-ons 页面单独卸载。
+卸载确认窗口会说明清理范围，并提供默认不勾选的「同时清除本机全部钉钉 DWS 登录状态」。该选项会影响同一 Windows 用户下其他使用 DWS 的工具，之后需重新登录；不勾选时保留登录状态。
 
-也可通过 `Notion2DingDing-Setup.exe -Action Uninstall` 卸载项目主体。共享依赖和项目下载的 Node.js / Pandoc / dws 暂时保留；当前卸载不会自动删除这些依赖及 dws 登录状态。
+卸载器清理带有本项目所有权标记的本地核心、Native Host、配置、最小状态、启动器、快捷方式、当前用户注册项，以及 `Notion2DingDingDependencies` 内由本项目安装的专属 Node.js / Pandoc / dws 和对应用户 PATH 条目。其他工具安装的共享依赖、没有本项目标记的目录、用户提供的 Notion ZIP 和已经创建的钉钉文档均保留。
+
+Edge 扩展在 `edge://extensions` 单独移除。0.1.2 扩展移除后会打开[本地助手卸载说明页](https://notion2dingding.leonz03.dpdns.org/uninstall)，引导完成上述操作。网页无法检测或自动卸载本地程序。
+
+旧版本没有 Windows 卸载入口时，可下载最新版安装器，在其所在文件夹运行：
+
+```powershell
+.\Notion2DingDing-Setup.exe -Action Uninstall                         # 卸载项目和专属依赖，保留钉钉登录状态
+.\Notion2DingDing-Setup.exe -Action Uninstall -RemoveDingtalkLogin    # 同时清除本机全部 DWS 登录状态；影响其他 DWS 用途
+```
+
+发布包的备用 ZIP 中也提供 `scripts\Uninstall-Notion2DingDing.cmd`，默认保留登录状态。
 
 ## 当前限制
 

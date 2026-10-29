@@ -85,7 +85,8 @@ try {
     $native = Join-Path $installRoot 'Programs\Host'
     $setup = Join-Path $releaseDirectory 'Notion2DingDing-Setup.exe'
     & $setup --no-pause `
-        -SkipDependencyInstall -SkipDependencyCheck -SkipRegistry -Quiet `
+        -SkipDependencyInstall -SkipDependencyCheck -SkipRegistry -SkipUserPathUpdate -Quiet `
+        -DependencyDirectory (Join-Path $testRoot 'Notion2DingDingDependencies') `
         -LocalInstallDirectory $local -DataDirectory $data -LauncherDirectory $launcher `
         -StartMenuDirectory $startMenu -NativeInstallDirectory $native
     if ($LASTEXITCODE -ne 0) { throw "隔离安装失败：exit=$LASTEXITCODE" }
@@ -98,7 +99,8 @@ try {
     Assert-True -Condition ($nativeManifest.allowed_origins -contains "chrome-extension://$publishedExtensionId/") -Message 'Native Host 未加入 Edge Add-ons 正式扩展 ID。'
 
     & $setup --no-pause -Action Uninstall `
-        -SkipDependencyInstall -SkipDependencyCheck -SkipRegistry -Quiet `
+        -SkipDependencyInstall -SkipDependencyCheck -SkipRegistry -SkipUserPathUpdate -Quiet `
+        -DependencyDirectory (Join-Path $testRoot 'Notion2DingDingDependencies') `
         -LocalInstallDirectory $local -DataDirectory $data -LauncherDirectory $launcher `
         -StartMenuDirectory $startMenu -NativeInstallDirectory $native
     if ($LASTEXITCODE -ne 0) { throw "隔离卸载失败：exit=$LASTEXITCODE" }

@@ -87,7 +87,7 @@ npm run upgrade:local                                   # 升级已安装的 Win
 npm run uninstall:local                                 # 卸载本项目安装的本地程序、配置和最小状态
 ```
 
-卸载不会删除用户选择的 Notion 导出包、已经生成的钉钉文档或 dws 登录凭据。
+正式安装版也可从 Windows「已安装的应用」或开始菜单的「卸载 Notion2DingDing」卸载。卸载会清理本项目专属依赖，保留共享依赖、Notion 导出包和已生成的钉钉文档；钉钉登录状态默认保留，可在确认窗口选择清除。
 
 ### 仓库检查（可选）
 

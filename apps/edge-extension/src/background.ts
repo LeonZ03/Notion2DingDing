@@ -69,6 +69,18 @@ const maxTransferCharacters = 63 * 1024 * 1024;
 const maxTransferChunkCharacters = 768 * 1024;
 const transferLifetimeMilliseconds = 5 * 60 * 1000;
 
+function registerUninstallPage(): void {
+  try {
+    void chrome.runtime.setUninstallURL("https://notion2dingding.leonz03.dpdns.org/uninstall").catch(() => {
+      // 异步注册失败也不应影响迁移入口。
+    });
+  } catch {
+    // 卸载说明页注册失败不应影响扩展功能。
+  }
+}
+
+chrome.runtime.onInstalled.addListener(() => registerUninstallPage());
+
 function validTransferId(value: string): boolean {
   return /^[0-9a-f-]{16,64}$/iu.test(value);
 }

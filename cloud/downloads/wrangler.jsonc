@@ -12,6 +12,6 @@
   "assets": {
     "directory": "../../dist/download-site/public",
     "binding": "ASSETS",
-    "run_worker_first": ["/api/*", "/downloads/*"]
+    "run_worker_first": ["/api/*", "/downloads/*", "/uninstall"]
   }
 }

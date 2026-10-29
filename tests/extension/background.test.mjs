@@ -82,9 +82,17 @@ function resultFor(request) {
   return taskSnapshot("running");
 }
 
+let installListener;
+let uninstallUrl;
+let uninstallRegistrationFails = false;
 globalThis.chrome = {
   runtime: {
     lastError: undefined,
+    onInstalled: { addListener(value) { installListener = value; } },
+    async setUninstallURL(value) {
+      if (uninstallRegistrationFails) throw new Error('registration failed');
+      uninstallUrl = value;
+    },
     onMessage: {
       addListener(value) {
         listener = value;
@@ -123,6 +131,17 @@ globalThis.chrome = {
 };
 
 await import("../../dist/edge-extension/background.js");
+
+test('安装与更新注册固定卸载说明页，失败不阻断扩展', async () => {
+  assert.equal(typeof installListener, 'function');
+  installListener({ reason: 'install' });
+  await Promise.resolve();
+  assert.equal(uninstallUrl, 'https://notion2dingding.leonz03.dpdns.org/uninstall');
+  uninstallRegistrationFails = true;
+  assert.doesNotThrow(() => installListener({ reason: 'update' }));
+  await Promise.resolve();
+  uninstallRegistrationFails = false;
+});
 
 function dispatch(message) {
   return new Promise((resolve, reject) => {

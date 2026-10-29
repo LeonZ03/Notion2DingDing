@@ -1,3 +1,4 @@
+import { uninstallResponse } from './uninstall-page.mjs';
 const CHUNK = 8 * 1024 * 1024;
 
 function responseError(status, message) { return new Response(message, { status, headers: { 'content-type': 'text/plain; charset=utf-8' } }); }
@@ -63,6 +64,7 @@ export default { async fetch(request, env) {
   let path;
   try { path = decodeURIComponent(url.pathname); } catch { return responseError(400, 'Invalid path'); }
   if (!['GET', 'HEAD'].includes(request.method)) return responseError(405, 'Method not allowed');
+  if (path === '/uninstall') return uninstallResponse(request.method);
   if (path === '/api/health') {
     try { const m = await readManifest(env, url.origin); return Response.json({ ok: true, version: m.version, files: m.files.map(({ path, bytes, sha256 }) => ({ path, bytes, sha256 })) }); }
     catch { return responseError(503, 'Release manifest unavailable'); }

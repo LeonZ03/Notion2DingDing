@@ -131,7 +131,7 @@ function Get-StatusResult {
     }
 }
 
-if ([string]::IsNullOrWhiteSpace($ExtensionId)) {
+if ($Action -ne 'Uninstall' -and [string]::IsNullOrWhiteSpace($ExtensionId)) {
     $ExtensionId = Get-ExtensionIdFromKey
 }
 $extensionIds = @(

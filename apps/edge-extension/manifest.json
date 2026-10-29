@@ -3,7 +3,7 @@
   "name": "__MSG_extensionName__",
   "description": "__MSG_extensionDescription__",
   "default_locale": "zh_CN",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwcBGaCiZwmm1BZyWhUgyJ5vwlNPA/uR6BIF+PUr5tYd1r+eHvMF1OvUq1xKt4o6Lh2yToubwOZUIXTiYU4gTU/qITmRr+8XAu0TQp+9QqDbfHosmENtx4Xa5xAQFCA3p+bszC044Uzx4BhQd+FjTbN530cuwV6uVz5THKeR3TD9YcjXnWg2g6W9ZRqH5k9wNQgmXoyKLb2lj3nBCatHNij3CJgaMBdWBUk+AWHt9p6E6fzWWrk+pphIUcVuys0X3CsPj1eLsslhdQtGR/QCVIXcs53u2eKqDQjlYGCIQOfmmkWpEJ8LJr+lrKJlwM9xE5dW4uMsAYE4WF/TS2geW7QIDAQAB",
   "action": {
     "default_title": "Notion2DingDing",
